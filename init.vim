@@ -11,6 +11,7 @@ Plug 'trevordmiller/nova-vim'
 Plug 'pangloss/vim-javascript'
 Plug 'mxw/vim-jsx'
 Plug 'w0rp/ale'
+Plug 'junegunn/fzf'
 " call PlugInstall to install new plugins
 call plug#end()
 
