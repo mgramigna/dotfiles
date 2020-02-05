@@ -20,6 +20,7 @@ Plug 'airblade/vim-gitgutter'
 Plug 'sbdchd/neoformat'
 Plug 'prettier/vim-prettier', { 'do': 'yarn install' }
 Plug 'tpope/vim-fugitive'
+Plug 'w0rp/ale'
 " call PlugInstall to install new plugins
 call plug#end()
 
@@ -90,6 +91,9 @@ let g:jsx_ext_required = 0
 "let g:ale_fix_on_save = 1
 "let g:ale_javascript_prettier_eslint_executable = 'prettier-eslint'
 "let g:ale_javascript_prettier_eslint_use_global = 1
+let g:ale_fixers = {}
+let g:ale_fixers.javascript = ['eslint']
+let g:ale_fix_on_save = 1
 
 " syntastic
 " set statusline+=%#warningmsg#
