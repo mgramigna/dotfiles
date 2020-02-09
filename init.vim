@@ -12,7 +12,7 @@ Plug 'trevordmiller/nova-vim'
 Plug 'pangloss/vim-javascript'
 Plug 'mxw/vim-jsx'
 Plug 'w0rp/ale'
-Plug 'junegunn/fzf'
+Plug 'kien/ctrlp.vim'
 Plug 'iamcco/markdown-preview.nvim', { 'do': 'cd app & yarn install'  }
 Plug 'briancollins/vim-jst'
 Plug 'tomasiser/vim-code-dark'
