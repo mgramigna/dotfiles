@@ -22,6 +22,7 @@ Plug 'christoomey/vim-tmux-navigator'
 Plug 'scrooloose/nerdcommenter'
 Plug 'tpope/vim-surround'
 Plug 'jiangmiao/auto-pairs'
+Plug 'alvan/vim-closetag'
 
 " Git
 Plug 'mhinz/vim-signify'
@@ -122,3 +123,17 @@ nmap <silent> ]g <Plug>(coc-diagnostic-next)
 nmap <leader>do <Plug>(coc-codeaction)
 nmap <leader>rn <Plug>(coc-rename)
 
+" vim-closetag settings
+
+let g:closetag_filenames = '*.html,*.xhtml,*.phtml,*.jsx,*.tsx'
+let g:closetag_xhtml_filenames = '*.xhtml,*.jsx,*.tsx'
+let g:closetag_filetypes = 'html,xhtml,phtml,jsx,tsx'
+let g:closetag_xhtml_filetypes = 'xhtml,jsx,tsx'
+let g:closetag_emptyTags_caseSensitive = 1
+let g:closetag_regions = {
+  \ 'typescript.tsx': 'jsxRegion,tsxRegion',
+  \ 'javascript.jsx': 'jsxRegion',
+  \ }
+
+let g:closetag_shortcut = '>'
+let g:closetag_close_shortcut = '<leader>>'
