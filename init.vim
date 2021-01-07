@@ -21,6 +21,7 @@ Plug 'christoomey/vim-tmux-navigator'
 " Editing Keybinds
 Plug 'scrooloose/nerdcommenter'
 Plug 'tpope/vim-surround'
+Plug 'jiangmiao/auto-pairs'
 
 " Git
 Plug 'mhinz/vim-signify'
@@ -53,8 +54,10 @@ nmap <silent> <c-k> :wincmd k<CR>
 nmap <silent> <c-j> :wincmd j<CR>
 nmap <silent> <c-h> :wincmd h<CR>
 nmap <silent> <c-l> :wincmd l<CR>
+
 " change spacing for language specific
 autocmd Filetype javascript setlocal ts=2 sts=2 sw=2
+autocmd Filetype python setlocal ts=4 sts=4 sw=4
 
 " plugin settings
 
@@ -102,6 +105,7 @@ augroup end
 let g:coc_global_extensions = [
   \ 'coc-tsserver'
   \ ]
+
 if isdirectory('./node_modules') && isdirectory('./node_modules/prettier')
   let g:coc_global_extensions += ['coc-prettier']
 endif
