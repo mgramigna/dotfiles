@@ -93,15 +93,6 @@ nmap <c-t> :GFiles --exclude-standard --others --cached<CR>
 nmap <c-p> :Files<CR>
 nmap <c-b> :Buffers<CR>
 
-" Journaling
-augroup journal
-    autocmd!
-
-    " populate journal template
-    autocmd VimEnter */journal/**   0r ~/.config/nvim/templates/journal.skeleton
-    autocmd VimEnter */journal/**   set complete=k/~/journal/**/*
-augroup end
-
 " CoC
 let g:coc_global_extensions = [
   \ 'coc-tsserver'
@@ -122,6 +113,10 @@ nmap <silent> [g <Plug>(coc-diagnostic-prev)
 nmap <silent> ]g <Plug>(coc-diagnostic-next)
 nmap <leader>do <Plug>(coc-codeaction)
 nmap <leader>rn <Plug>(coc-rename)
+vmap <leader>f <Plug>(coc-format-selected)
+nmap <leader>f <Plug>(coc-format-selected)
+
+command! -nargs=0 Prettier :CocCommand prettier.formatFile
 
 " vim-closetag settings
 
@@ -137,3 +132,6 @@ let g:closetag_regions = {
 
 let g:closetag_shortcut = '>'
 let g:closetag_close_shortcut = '<leader>>'
+
+command! -nargs=0 Fjson :%!jq .
+nmap <leader>p :Fjson<CR>
