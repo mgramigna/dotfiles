@@ -1,8 +1,8 @@
 call plug#begin('~/.config/nvim/bundle')
 " Colors/Themes
-Plug 'dikiaap/minimalist'
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
+Plug 'sainnhe/edge'
 
 " Language Support
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
@@ -15,8 +15,9 @@ Plug 'iamcco/markdown-preview.nvim', { 'do': 'cd app & yarn install'  }
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
 Plug 'jremmen/vim-ripgrep'
-Plug 'scrooloose/nerdtree'
 Plug 'christoomey/vim-tmux-navigator'
+Plug 'preservim/nerdtree'
+
 
 " Editing Keybinds
 Plug 'scrooloose/nerdcommenter'
@@ -29,7 +30,6 @@ Plug 'mhinz/vim-signify'
 call plug#end()
 
 " basics
-colorscheme minimalist
 filetype plugin indent on
 syntax on
 set number
@@ -46,10 +46,7 @@ set nobackup
 set noswapfile
 set nowrap
 set autoread
-" Make Y yank everything from the cursor to the end of the line. This makes Y
-" act more like C or D because by default, Y yanks the current line (i.e. the
-" same as yy).
-noremap Y y$
+
 " navigate split screens easily
 nmap <silent> <c-k> :wincmd k<CR>
 nmap <silent> <c-j> :wincmd j<CR>
@@ -60,17 +57,19 @@ nmap <silent> <c-l> :wincmd l<CR>
 autocmd Filetype javascript setlocal ts=2 sts=2 sw=2
 autocmd Filetype python setlocal ts=4 sts=4 sw=4
 
-" plugin settings
+" theme
+if has('termguicolors')
+  set termguicolors
+endif
 
-" Theme
-syntax enable
-"let $NVIM_TUI_ENABLE_TRUE_COLOR=1
+let g:edge_style = 'aura'
+let g:edge_enable_italic = 1
+let g:edge_disable_italic_comment = 1
 
-"NERDTree
-" How can I close vim if the only window left open is a NERDTree?
+colorscheme edge
+
+" NERDTree
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
-
-" toggle NERDTree
 map <C-n> :NERDTreeToggle<CR>
 let g:NERDTreeChDirMode=2
 let g:NERDTreeIgnore=['\.rbc$', '\~$', '\.pyc$', '\.db$', '\.sqlite$', '__pycache__', 'node_modules']
@@ -83,9 +82,9 @@ set wildignore+=*/tmp/*,*.so,*.swp,*.zip,*.pyc,*.db,*.sqlite
 " jsx
 let g:jsx_ext_required = 0
 au BufNewFile,BufRead *.tsx setlocal filetype=typescript.tsx
-"
+
 " airline
-let g:airline_theme='minimalist'
+let g:airline_theme='edge'
 let g:airline_powerline_fonts = 1
 let g:airline#extensions#tabline#enabled = 1
 
@@ -97,14 +96,6 @@ nmap <c-b> :Buffers<CR>
 let g:coc_global_extensions = [
   \ 'coc-tsserver'
   \ ]
-
-if isdirectory('./node_modules') && isdirectory('./node_modules/prettier')
-  let g:coc_global_extensions += ['coc-prettier']
-endif
-
-if isdirectory('./node_modules') && isdirectory('./node_modules/eslint')
-  let g:coc_global_extensions += ['coc-eslint']
-endif
 
 nmap <silent> gd <Plug>(coc-definition)
 nmap <silent> gy <Plug>(coc-type-definition)
