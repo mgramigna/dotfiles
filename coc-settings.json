@@ -1,0 +1,13 @@
+{
+  "eslint.autoFixOnSave": true,
+  "prettier.requireConfig": true,
+  "coc.preferences.formatOnSaveFiletypes": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "tsserver.formatOnType": true,
+  "tsserver.enableJavascript": false,
+  "coc.preferences.formatOnType": true
+}
