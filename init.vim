@@ -3,6 +3,7 @@ call plug#begin('~/.config/nvim/bundle')
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
 Plug 'sainnhe/edge'
+Plug 'luochen1990/rainbow'
 
 " Language Support
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
@@ -17,7 +18,6 @@ Plug 'junegunn/fzf.vim'
 Plug 'jremmen/vim-ripgrep'
 Plug 'christoomey/vim-tmux-navigator'
 Plug 'preservim/nerdtree'
-
 
 " Editing Keybinds
 Plug 'scrooloose/nerdcommenter'
@@ -57,6 +57,9 @@ nmap <silent> <c-l> :wincmd l<CR>
 autocmd Filetype javascript setlocal ts=2 sts=2 sw=2
 autocmd Filetype python setlocal ts=4 sts=4 sw=4
 
+" close all buffers but this one
+nnoremap <leader>bd :w <bar> %bd <bar> e#<CR>
+
 " theme
 if has('termguicolors')
   set termguicolors
@@ -67,6 +70,8 @@ let g:edge_enable_italic = 1
 let g:edge_disable_italic_comment = 1
 
 colorscheme edge
+
+let g:rainbow_active = 1
 
 " NERDTree
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
@@ -110,7 +115,6 @@ nmap <leader>f <Plug>(coc-format-selected)
 command! -nargs=0 Prettier :CocCommand prettier.formatFile
 
 " vim-closetag settings
-
 let g:closetag_filenames = '*.html,*.xhtml,*.phtml,*.jsx,*.tsx'
 let g:closetag_xhtml_filenames = '*.xhtml,*.jsx,*.tsx'
 let g:closetag_filetypes = 'html,xhtml,phtml,jsx,tsx'
