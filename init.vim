@@ -111,6 +111,7 @@ nmap <leader>do <Plug>(coc-codeaction)
 nmap <leader>rn <Plug>(coc-rename)
 vmap <leader>f <Plug>(coc-format-selected)
 nmap <leader>f <Plug>(coc-format-selected)
+nnoremap <silent> K :call CocAction('doHover')<CR>
 
 command! -nargs=0 Prettier :CocCommand prettier.formatFile
 
@@ -128,5 +129,7 @@ let g:closetag_regions = {
 let g:closetag_shortcut = '>'
 let g:closetag_close_shortcut = '<leader>>'
 
+" custom mappings
 command! -nargs=0 Fjson :%!jq .
 nmap <leader>p :Fjson<CR>
+nmap <leader>sr :%s/\<<C-r><C-w>\>//gc<Left><Left><Left>
