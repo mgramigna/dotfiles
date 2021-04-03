@@ -26,7 +26,11 @@ Plug 'jiangmiao/auto-pairs'
 Plug 'alvan/vim-closetag'
 
 " Git
-Plug 'mhinz/vim-signify'
+Plug 'airblade/vim-gitgutter'
+Plug 'tpope/vim-fugitive'
+
+" Misc
+Plug 'psliwka/vim-smoothie'
 call plug#end()
 
 " basics
@@ -92,6 +96,8 @@ au BufNewFile,BufRead *.tsx setlocal filetype=typescript.tsx
 let g:airline_theme='edge'
 let g:airline_powerline_fonts = 1
 let g:airline#extensions#tabline#enabled = 1
+let g:airline#extensions#hunks#enabled=0
+let g:airline#extensions#branch#enabled=1
 
 nmap <c-t> :GFiles --exclude-standard --others --cached<CR>
 nmap <c-p> :Files<CR>
@@ -101,6 +107,14 @@ nmap <c-b> :Buffers<CR>
 let g:coc_global_extensions = [
   \ 'coc-tsserver'
   \ ]
+
+if isdirectory('./node_modules') && isdirectory('./node_modules/prettier')
+  let g:coc_global_extensions += ['coc-prettier']
+endif
+
+if isdirectory('./node_modules') && isdirectory('./node_modules/eslint')
+  let g:coc_global_extensions += ['coc-eslint']
+endif
 
 nmap <silent> gd <Plug>(coc-definition)
 nmap <silent> gy <Plug>(coc-type-definition)
@@ -114,6 +128,15 @@ nmap <leader>f <Plug>(coc-format-selected)
 nnoremap <silent> K :call CocAction('doHover')<CR>
 
 command! -nargs=0 Prettier :CocCommand prettier.formatFile
+
+" Run jest for current project
+command! -nargs=0 Jest :call  CocAction('runCommand', 'jest.projectTest')
+
+" Run jest for current file
+command! -nargs=0 JestCurrent :call  CocAction('runCommand', 'jest.fileTest', ['%'])
+
+" Run jest for current test
+nnoremap <leader>te :call CocAction('runCommand', 'jest.singleTest')<CR>
 
 " vim-closetag settings
 let g:closetag_filenames = '*.html,*.xhtml,*.phtml,*.jsx,*.tsx'
