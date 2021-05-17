@@ -7,3 +7,4 @@ cp ~/.tmux.conf .
 cp ~/.config/nvim/coc-settings.json .
 
 echo 'Done'
+
