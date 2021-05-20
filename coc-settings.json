@@ -5,9 +5,14 @@
     "javascript",
     "javascriptreact",
     "typescript",
-    "typescriptreact"
+    "typescriptreact",
+    "ruby"
   ],
   "tsserver.formatOnType": true,
   "tsserver.enableJavascript": false,
-  "coc.preferences.formatOnType": true
+  "coc.preferences.formatOnType": true,
+  "solargraph.diagnostics": true,
+  "solargraph.autoformat": true,
+  "solargraph.formatting": true,
+  "solargraph.hover": true
 }

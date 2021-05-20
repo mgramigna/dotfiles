@@ -1,9 +1,11 @@
 call plug#begin('~/.config/nvim/bundle')
 " Colors/Themes
+Plug 'ryanoasis/vim-devicons'
 Plug 'vim-airline/vim-airline'
 Plug 'vim-airline/vim-airline-themes'
-Plug 'sainnhe/edge'
+Plug 'joshdick/onedark.vim'
 Plug 'luochen1990/rainbow'
+Plug 'dracula/vim', { 'as': 'dracula' }
 
 " Language Support
 Plug 'neoclide/coc.nvim', {'branch': 'release'}
@@ -50,6 +52,7 @@ set nobackup
 set noswapfile
 set nowrap
 set autoread
+set guifont=Anonymous\ Pro:h11
 
 " navigate split screens easily
 nmap <silent> <c-k> :wincmd k<CR>
@@ -69,11 +72,11 @@ if has('termguicolors')
   set termguicolors
 endif
 
-let g:edge_style = 'aura'
-let g:edge_enable_italic = 1
-let g:edge_disable_italic_comment = 1
+"let g:edge_style = 'aura'
+"let g:edge_enable_italic = 1
+"let g:edge_disable_italic_comment = 1
 
-colorscheme edge
+colorscheme dracula
 
 let g:rainbow_active = 1
 
@@ -93,7 +96,7 @@ let g:jsx_ext_required = 0
 au BufNewFile,BufRead *.tsx setlocal filetype=typescript.tsx
 
 " airline
-let g:airline_theme='edge'
+let g:airline_theme='dracula'
 let g:airline_powerline_fonts = 1
 let g:airline#extensions#tabline#enabled = 1
 let g:airline#extensions#hunks#enabled=0
@@ -105,16 +108,11 @@ nmap <c-b> :Buffers<CR>
 
 " CoC
 let g:coc_global_extensions = [
-  \ 'coc-tsserver'
+  \ 'coc-tsserver',
+  \ 'coc-prettier',
+  \ 'coc-eslint',
+  \ 'coc-solargraph'
   \ ]
-
-if isdirectory('./node_modules') && isdirectory('./node_modules/prettier')
-  let g:coc_global_extensions += ['coc-prettier']
-endif
-
-if isdirectory('./node_modules') && isdirectory('./node_modules/eslint')
-  let g:coc_global_extensions += ['coc-eslint']
-endif
 
 nmap <silent> gd <Plug>(coc-definition)
 nmap <silent> gy <Plug>(coc-type-definition)
@@ -138,6 +136,10 @@ command! -nargs=0 JestCurrent :call  CocAction('runCommand', 'jest.fileTest', ['
 " Run jest for current test
 nnoremap <leader>te :call CocAction('runCommand', 'jest.singleTest')<CR>
 
+" Trigger autocomplete
+inoremap <silent><expr> <c-space> coc#refresh()
+
+
 " vim-closetag settings
 let g:closetag_filenames = '*.html,*.xhtml,*.phtml,*.jsx,*.tsx'
 let g:closetag_xhtml_filenames = '*.xhtml,*.jsx,*.tsx'
@@ -156,3 +158,11 @@ let g:closetag_close_shortcut = '<leader>>'
 command! -nargs=0 Fjson :%!jq .
 nmap <leader>p :Fjson<CR>
 nmap <leader>sr :%s/\<<C-r><C-w>\>//gc<Left><Left><Left>
+
+command! W w
+command! Wq wq
+command! Wqa wqa
+command! Q q
+command! Qa qa
+
+nnoremap <leader>lg "ayiw0console.log('<C-R>a:', <C-R>a);<Esc>
