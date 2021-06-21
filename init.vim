@@ -165,4 +165,4 @@ command! Wqa wqa
 command! Q q
 command! Qa qa
 
-nnoremap <leader>lg "ayiw0console.log('<C-R>a:', <C-R>a);<Esc>
+xnoremap <Leader>lg "ayOconsole.log('<C-R>a:', <C-R>a);<Esc>
