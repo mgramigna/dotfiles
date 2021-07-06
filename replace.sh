@@ -1,13 +1,12 @@
 #!/bin/sh
 
 echo 'Copying files from repo into directories'
+timestamp=$(date +%s)
 
-mv ~/.config/nvim/init.vim ~/.config/nvim/init.vim.bak
-mv ~/.tmux.conf ~/.tmux.conf.bak
-mv ~/.config/nvim/coc-settings.json ~/.config/nvim/coc-settings.json.bak
+mv ~/.config/nvim/ ~/.config/nvim-$timestamp.bak
+mv ~/.tmux.conf ~/.tmux.conf-$timestamp.bak
 
-cp ./init.vim ~/.config/nvim
+cp -r nvim ~/.config/
 cp ./.tmux.conf ~
-cp ./coc-settings.json ~/.config/nvim/coc-settings.json
 
 echo 'Done'
