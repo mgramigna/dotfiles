@@ -1,3 +1,4 @@
+return function()
 vim.o.completeopt = "menuone,noselect"
 require'compe'.setup {
   enabled = true;
@@ -32,3 +33,4 @@ require'compe'.setup {
     luasnip = true;
   };
 }
+end

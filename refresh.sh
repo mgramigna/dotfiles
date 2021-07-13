@@ -2,9 +2,8 @@
 
 echo 'Copying files from home directory'
 
-cp ~/.config/nvim/init.vim ./nvim
-cp ~/.config/nvim/plugins/plugins.vim ./nvim/plugins
-cp -r ~/.config/nvim/after ./nvim
+cp ~/.config/nvim/init.lua ./nvim
+cp -r ~/.config/nvim/lua ./nvim
 cp ~/.tmux.conf .
 
 echo 'Done'
