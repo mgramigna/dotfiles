@@ -17,6 +17,9 @@ return packer.startup(function(use)
     }
   }
 
+  -- Formatting
+  use { 'mhartington/formatter.nvim', config = require('plugin.formatter') }
+
   -- Syntax
   use { 'nvim-treesitter/nvim-treesitter', run = ":TSUpdate", config = require('plugin.treesitter') }
 
