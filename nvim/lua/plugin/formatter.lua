@@ -14,7 +14,8 @@ return function()
       typescript = { prettier },
       javascriptreact = { prettier },
       typescriptreact = { prettier },
-      json = { prettier }
+      json = { prettier },
+      markdown = { prettier }
     }
   })
 

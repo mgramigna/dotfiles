@@ -10,6 +10,9 @@ end
 
 local packer = require('packer')
 return packer.startup(function(use)
+  -- Packer
+  use 'wbthomason/packer.nvim'
+
   -- LSP
   use { 'neovim/nvim-lspconfig', config = require('plugin.lspconfig'), requires = {
       { 'glepnir/lspsaga.nvim', config = require('plugin.lspsaga') },
@@ -43,5 +46,8 @@ return packer.startup(function(use)
   -- Git
   use 'tpope/vim-fugitive'
   use { 'lewis6991/gitsigns.nvim', requires = { 'nvim-lua/plenary.nvim' }, config = require('plugin.gitsigns') }
+
+  -- Markdown
+  use {"npxbr/glow.nvim", run = "GlowInstall"}
 end)
 
