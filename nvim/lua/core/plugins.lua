@@ -49,5 +49,8 @@ return packer.startup(function(use)
 
   -- Markdown
   use {"npxbr/glow.nvim", run = "GlowInstall"}
+
+  -- Jest execution
+  use { 'David-Kunz/jester', config = require('plugin.jester') }
 end)
 

@@ -1,16 +1,16 @@
 return function()
-local actions = require('telescope.actions')
-require('telescope').setup{
-  defaults = {
-    mappings = {
-      n = {
-        ["q"] = actions.close
+  local actions = require('telescope.actions')
+  require('telescope').setup{
+    defaults = {
+      mappings = {
+        n = {
+          ["q"] = actions.close
+        },
       },
-    },
+    }
   }
-}
 
-vim.api.nvim_set_keymap('n', '<C-t>', ':Telescope find_files<cr>', { noremap = true, silent = true})
-vim.api.nvim_set_keymap('n', '<C-s>', ':Telescope live_grep<cr>', { noremap = true, silent = true})
-vim.api.nvim_set_keymap('n', '<C-b>', ':Telescope buffers<cr>', { noremap = true, silent = true})
+  vim.api.nvim_set_keymap('n', '<C-t>', ':Telescope find_files<cr>', { noremap = true, silent = true})
+  vim.api.nvim_set_keymap('n', '<C-s>', ':Telescope live_grep<cr>', { noremap = true, silent = true})
+  vim.api.nvim_set_keymap('n', '<C-b>', ':Telescope buffers<cr>', { noremap = true, silent = true})
 end
