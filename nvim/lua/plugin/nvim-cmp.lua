@@ -1,5 +1,6 @@
 return function()
-  local cmp = require('cmp');
+  local cmp = require('cmp')
+  local lspkind = require('lspkind')
 
   vim.o.completeopt = "menu,menuone,noselect"
 
@@ -14,6 +15,9 @@ return function()
     sources = {
       { name = 'nvim_lsp' },
       { name = 'buffer' }
+    },
+    formatting = {
+      format = lspkind.cmp_format({ with_text = false, max_width = 50 })
     }
   })
 end

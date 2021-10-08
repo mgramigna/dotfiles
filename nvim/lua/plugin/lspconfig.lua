@@ -65,6 +65,12 @@ return function()
 	  filetypes = { "typescript", "typescriptreact", "typescript.tsx" }
 	}
 
+	nvim_lsp.tailwindcss.setup {
+    capabilites = capabilites,
+	  on_attach = on_attach,
+	  filetypes = { "typescriptreact", "typescript.tsx", 'javascript', 'javascriptreact' }
+	}
+
 	nvim_lsp.solargraph.setup {
     capabilites = capabilites,
 	  on_attach = on_attach,
