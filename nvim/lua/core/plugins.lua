@@ -16,7 +16,13 @@ return packer.startup(function(use)
   -- LSP
   use { 'neovim/nvim-lspconfig', config = require('plugin.lspconfig'), requires = {
       { 'glepnir/lspsaga.nvim', config = require('plugin.lspsaga') },
-      { 'hrsh7th/nvim-compe', config = require('plugin.nvim-compe') }
+      { 'kabouzeid/nvim-lspinstall', config = require('plugin.lspinstall') }
+    }
+  }
+
+  use { 'hrsh7th/nvim-cmp', config = require('plugin.nvim-cmp'), requires = {
+      { 'hrsh7th/cmp-nvim-lsp' },
+      { 'hrsh7th/cmp-buffer' }
     }
   }
 
@@ -48,7 +54,7 @@ return packer.startup(function(use)
   use { 'lewis6991/gitsigns.nvim', requires = { 'nvim-lua/plenary.nvim' }, config = require('plugin.gitsigns') }
 
   -- Markdown
-  use {"npxbr/glow.nvim", run = "GlowInstall"}
+  use {"npxbr/glow.nvim", run = "GlowInstall" }
 
   -- Jest execution
   use { 'David-Kunz/jester', config = require('plugin.jester') }

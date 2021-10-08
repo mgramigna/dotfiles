@@ -21,7 +21,10 @@ return function()
 	  buf_set_keymap('n', ']g', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', noremap_silent_opts)
 	end
 
+  local capabilites = require('cmp_nvim_lsp').update_capabilities(vim.lsp.protocol.make_client_capabilities())
+
 	nvim_lsp.diagnosticls.setup {
+    capabilites = capabilites,
 	  on_attach = on_attach,
 	  filetypes = { 'javascript', 'javascriptreact', 'json', 'typescript', 'typescriptreact', 'css', 'markdown' },
 	  init_options = {
@@ -57,11 +60,13 @@ return function()
 	}
 
 	nvim_lsp.tsserver.setup {
+    capabilites = capabilites,
 	  on_attach = on_attach,
 	  filetypes = { "typescript", "typescriptreact", "typescript.tsx" }
 	}
 
 	nvim_lsp.solargraph.setup {
+    capabilites = capabilites,
 	  on_attach = on_attach,
 	  filetypes = { "ruby" }
 	}
