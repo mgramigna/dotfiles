@@ -1,11 +1,8 @@
 return function()
-	local nvim_lsp = require('lspconfig')
+  local lsp_installer = require("nvim-lsp-installer")
 
-	local on_attach = function(client, bufnr)
+	local on_attach = function(_, bufnr)
 	  local function buf_set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
-	  local function buf_set_option(...) vim.api.nvim_buf_set_option(bufnr, ...) end
-
-	  buf_set_option('omnifunc', 'v:lua.vim.lsp.omnifunc')
 
 	  local noremap_silent_opts = { noremap=true, silent=true }
 
@@ -19,61 +16,42 @@ return function()
 	  buf_set_keymap('n', '<leader>e', '<cmd>lua vim.lsp.diagnostic.show_line_diagnostics()<CR>', noremap_silent_opts)
 	  buf_set_keymap('n', '[g', '<cmd>lua vim.lsp.diagnostic.goto_prev()<CR>', noremap_silent_opts)
 	  buf_set_keymap('n', ']g', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', noremap_silent_opts)
+    buf_set_keymap('n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>', noremap_silent_opts)
+	  buf_set_keymap('n', '<C-k>', '<cmd>lua vim.lsp.buf.signature_help()<CR>', noremap_silent_opts)
 	end
 
   local capabilites = require('cmp_nvim_lsp').update_capabilities(vim.lsp.protocol.make_client_capabilities())
 
-	nvim_lsp.diagnosticls.setup {
-    capabilites = capabilites,
-	  on_attach = on_attach,
-	  filetypes = { 'javascript', 'javascriptreact', 'json', 'typescript', 'typescriptreact', 'css', 'markdown' },
-	  init_options = {
-      linters = {
-        eslint = {
-          command = 'eslint_d',
-          rootPatterns = { '.git' },
-          debounce = 100,
-          args = { '--stdin', '--stdin-filename', '%filepath', '--format', 'json' },
-          sourceName = 'eslint_d',
-          parseJson = {
-            errorsRoot = '[0].messages',
-            line = 'line',
-            column = 'column',
-            endLine = 'endLine',
-            endColumn = 'endColumn',
-            message = '[eslint] ${message} [${ruleId}]',
-            security = 'severity'
-          },
-          securities = {
-            [2] = 'error',
-            [1] = 'warning'
-          }
-        },
-      },
-	    filetypes = {
-	      javascript = 'eslint',
-	      javascriptreact = 'eslint',
-	      typescript = 'eslint',
-	      typescriptreact = 'eslint',
-	    },
-	  }
-	}
+  local config = {
+    ["eslint"] = {
+      on_attach = on_attach
+    },
+    ["tsserver"] = {
+      capabilites = capabilites,
+      on_attach = on_attach,
+      filetypes = { "typescript", "typescriptreact", "typescript.tsx" }
+    },
+    ["tailwindcss"] = {
+      capabilites = capabilites
+    },
+    ["solargraph"]= {
+      capabilites = capabilites,
+      on_attach = on_attach
+    },
+    ["sumneko_lua"]= {
+      capabilites = capabilites,
+      on_attach = on_attach
+    }
+  }
 
-	nvim_lsp.tsserver.setup {
-    capabilites = capabilites,
-	  on_attach = on_attach,
-	  filetypes = { "typescript", "typescriptreact", "typescript.tsx" }
-	}
+  lsp_installer.on_server_ready(function(server)
+    local opts = config[server.name]
 
-	nvim_lsp.tailwindcss.setup {
-    capabilites = capabilites,
-	  on_attach = on_attach,
-	  filetypes = { "typescriptreact", "typescript.tsx", 'javascript', 'javascriptreact' }
-	}
-
-	nvim_lsp.solargraph.setup {
-    capabilites = capabilites,
-	  on_attach = on_attach,
-	  filetypes = { "ruby" }
-	}
+    if (opts == nil) then
+      server:setup()
+    else
+      server:setup(opts)
+    end
+    vim.cmd [[ do User LspAttachBuffers ]]
+  end)
 end

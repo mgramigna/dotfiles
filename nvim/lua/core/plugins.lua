@@ -15,15 +15,21 @@ return packer.startup(function(use)
 
   -- LSP
   use { 'neovim/nvim-lspconfig', config = require('plugin.lspconfig'), requires = {
-      { 'glepnir/lspsaga.nvim', config = require('plugin.lspsaga') },
-      { 'kabouzeid/nvim-lspinstall', config = require('plugin.lspinstall') }
+      { 'williamboman/nvim-lsp-installer' }
     }
   }
 
   use { 'hrsh7th/nvim-cmp', config = require('plugin.nvim-cmp'), requires = {
       { 'hrsh7th/cmp-nvim-lsp' },
       { 'hrsh7th/cmp-buffer' },
-      { 'onsails/lspkind-nvim' }
+      { 'hrsh7th/cmp-vsnip' },
+      { 'hrsh7th/vim-vsnip' },
+      { 'onsails/lspkind-nvim' },
+    }
+  }
+
+  use { 'RishabhRD/nvim-lsputils', config = require('plugin.lsputils'), requires = {
+      { 'RishabhRD/popfix' },
     }
   }
 
@@ -39,7 +45,7 @@ return packer.startup(function(use)
   use { 'dracula/vim', as = 'dracula' }
 
   -- Editing Keybinds
-  use 'tpope/vim-commentary'
+  use 'b3nj5m1n/kommentary'
   use 'tpope/vim-surround'
 
   -- Files
@@ -47,7 +53,8 @@ return packer.startup(function(use)
       "nvim-lua/popup.nvim",
       "nvim-lua/plenary.nvim",
     }
-  } 
+  }
+
   use { 'kyazdani42/nvim-tree.lua', config = require('plugin.nvim-tree') }
 
   -- Git
