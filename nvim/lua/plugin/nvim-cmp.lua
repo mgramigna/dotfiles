@@ -41,7 +41,8 @@ return function()
     sources = {
       { name = 'nvim_lsp' },
       { name = 'vsnip' },
-      { name = 'buffer' }
+      { name = 'buffer' },
+      { name = 'path' }
     },
     formatting = {
       format = lspkind.cmp_format({ with_text = false, max_width = 50 })

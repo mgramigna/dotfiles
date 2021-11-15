@@ -22,6 +22,7 @@ return packer.startup(function(use)
   use { 'hrsh7th/nvim-cmp', config = require('plugin.nvim-cmp'), requires = {
       { 'hrsh7th/cmp-nvim-lsp' },
       { 'hrsh7th/cmp-buffer' },
+      { 'hrsh7th/cmp-path' },
       { 'hrsh7th/cmp-vsnip' },
       { 'hrsh7th/vim-vsnip' },
       { 'onsails/lspkind-nvim' },
@@ -41,7 +42,7 @@ return packer.startup(function(use)
 
   -- Appearance
   use 'kyazdani42/nvim-web-devicons'
-  use { 'hoob3rt/lualine.nvim', config = require('plugin.lualine') }
+  use { 'nvim-lualine/lualine.nvim', config = require('plugin.lualine') }
   use { 'dracula/vim', as = 'dracula' }
 
   -- Editing Keybinds
@@ -62,7 +63,8 @@ return packer.startup(function(use)
   use { 'lewis6991/gitsigns.nvim', requires = { 'nvim-lua/plenary.nvim' }, config = require('plugin.gitsigns') }
 
   -- Markdown
-  use {"npxbr/glow.nvim", run = "GlowInstall" }
+  use {"npxbr/glow.nvim", run = ":GlowInstall" }
+  use {'iamcco/markdown-preview.nvim', run = 'cd app && yarn install', cmd = 'MarkdownPreview'}
 
   -- Jest execution
   use { 'David-Kunz/jester', config = require('plugin.jester') }

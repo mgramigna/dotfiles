@@ -47,8 +47,9 @@ return function()
   lsp_installer.on_server_ready(function(server)
     local opts = config[server.name]
 
+
     if (opts == nil) then
-      server:setup()
+      server:setup({})
     else
       server:setup(opts)
     end
