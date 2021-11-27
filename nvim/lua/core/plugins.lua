@@ -68,5 +68,9 @@ return packer.startup(function(use)
 
   -- Jest execution
   use { 'David-Kunz/jester', config = require('plugin.jester') }
+
+  -- Editing Simplicity
+  use { "beauwilliams/focus.nvim", config = require('plugin.focus') }
+  use { 'karb94/neoscroll.nvim', config = function() require('neoscroll').setup() end }
 end)
 

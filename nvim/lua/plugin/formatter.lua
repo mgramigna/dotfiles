@@ -15,14 +15,23 @@ return function()
       javascriptreact = { prettier },
       typescriptreact = { prettier },
       json = { prettier },
-      markdown = { prettier }
+      markdown = { prettier },
+      ruby = {
+       function()
+         return {
+           exe = "bundle exec rubocop",
+           args = { '--auto-correct', '--stdin', '%:p', '2>/dev/null', '|', "awk 'f; /^====================$/{f=1}'"},
+           stdin = true,
+         }
+       end
+     }
     }
   })
 
   vim.api.nvim_exec([[
     augroup FormatAutogroup
       autocmd!
-      autocmd BufWritePost *.js,*.ts,*.jsx,*.tsx FormatWrite
+      autocmd BufWritePost *.js,*.ts,*.jsx,*.tsx,*.rb FormatWrite
     augroup END
     ]], true)
 end
