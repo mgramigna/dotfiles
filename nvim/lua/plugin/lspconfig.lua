@@ -48,6 +48,10 @@ return function()
           }
         }
       }
+    },
+    ["jdtls"] = {
+      on_attach = on_attach,
+      capabilites = capabilites
     }
   }
 
