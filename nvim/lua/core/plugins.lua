@@ -48,6 +48,7 @@ return packer.startup(function(use)
   -- Editing Keybinds
   use 'b3nj5m1n/kommentary'
   use 'tpope/vim-surround'
+  use 'ggandor/lightspeed.nvim'
 
   -- Files
   use { 'nvim-telescope/telescope.nvim', config = require('plugin.telescope'), requires = {
@@ -64,13 +65,13 @@ return packer.startup(function(use)
 
   -- Markdown
   use {"npxbr/glow.nvim", run = ":GlowInstall" }
-  use {'iamcco/markdown-preview.nvim', run = 'cd app && yarn install', cmd = 'MarkdownPreview'}
+  use {'iamcco/markdown-preview.nvim', run = function() vim.fn['mkdp#util#intall']() end, ft = { 'markdown' }}
 
   -- Jest execution
   use { 'David-Kunz/jester', config = require('plugin.jester') }
 
   -- Editing Simplicity
   use { "beauwilliams/focus.nvim", config = require('plugin.focus') }
-  use { 'karb94/neoscroll.nvim', config = function() require('neoscroll').setup() end }
+  use { 'karb94/neoscroll.nvim', config = require('plugin.neoscroll') }
 end)
 
