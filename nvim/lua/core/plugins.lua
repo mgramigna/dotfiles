@@ -33,11 +33,6 @@ return packer.startup(function(use)
     }
   }
 
-  use { 'RishabhRD/nvim-lsputils', config = require('plugin.lsputils'), requires = {
-      { 'RishabhRD/popfix' },
-    }
-  }
-
   -- Formatting
   use { 'mhartington/formatter.nvim', config = require('plugin.formatter') }
 
@@ -70,9 +65,6 @@ return packer.startup(function(use)
   -- Markdown
   use {"npxbr/glow.nvim", run = ":GlowInstall" }
   use {'iamcco/markdown-preview.nvim', run = function() vim.fn['mkdp#util#intall']() end, ft = { 'markdown' }}
-
-  -- Jest execution
-  use { 'David-Kunz/jester', config = require('plugin.jester') }
 
   -- Editing Simplicity
   use { "beauwilliams/focus.nvim", config = require('plugin.focus') }
