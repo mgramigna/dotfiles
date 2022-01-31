@@ -11,7 +11,6 @@ return function()
     buf_set_keymap('n', 'gi', '<cmd>lua vim.lsp.buf.implementation()<CR>', noremap_silent_opts)
     buf_set_keymap('n', 'gt', '<cmd>lua vim.lsp.buf.type_definition()<CR>', noremap_silent_opts)
     buf_set_keymap('n', '<leader>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', noremap_silent_opts)
-    buf_set_keymap('n', '<leader>do', '<cmd>lua vim.lsp.buf.code_action()<CR>', noremap_silent_opts)
     buf_set_keymap('n', 'gr', '<cmd>lua vim.lsp.buf.references()<CR>', noremap_silent_opts)
     buf_set_keymap('n', '<leader>e', '<cmd>lua vim.diagnostic.open_float(0, { border = "single", scope="line" })<CR>', noremap_silent_opts)
     buf_set_keymap('n', ']g', '<cmd>lua vim.diagnostic.goto_next({ float = {border = "single"}})<CR>', noremap_silent_opts)
@@ -50,6 +49,10 @@ return function()
       }
     },
     ["jdtls"] = {
+      on_attach = on_attach,
+      capabilites = capabilites
+    },
+    ["pyright"] = {
       on_attach = on_attach,
       capabilites = capabilites
     }

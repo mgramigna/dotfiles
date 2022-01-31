@@ -28,6 +28,8 @@ return function()
     }
   })
 
+  vim.api.nvim_set_keymap('n', '<leader>f', ':Format<cr>', { noremap = true })
+
   vim.api.nvim_exec([[
     augroup FormatAutogroup
       autocmd!
