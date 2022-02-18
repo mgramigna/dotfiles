@@ -16,7 +16,6 @@ return function()
     buf_set_keymap('n', ']g', '<cmd>lua vim.diagnostic.goto_next({ float = {border = "single"}})<CR>', noremap_silent_opts)
     buf_set_keymap('n', '[g', '<cmd>lua vim.diagnostic.goto_prev({ float = {border = "single"}})<CR>', noremap_silent_opts)
     buf_set_keymap('n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>', noremap_silent_opts)
-    buf_set_keymap('n', '<C-a>', '<cmd>lua vim.lsp.buf.signature_help()<CR>', noremap_silent_opts)
 	end
 
   local capabilites = require('cmp_nvim_lsp').update_capabilities(vim.lsp.protocol.make_client_capabilities())
