@@ -5,6 +5,20 @@
 Required dependencies:
 
 ```
-npm install -g prettier
+npm install -g prettier eslint
+```
+
+## Tmux first time setup
+
+### Install tmp
+
+```
+git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+```
+
+### Install reattach-to-user-namespace For System Clipboard (macOS only)
+
+```
+brew install reattach-to-user-namespace
 ```
 
