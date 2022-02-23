@@ -16,6 +16,7 @@ return function()
       typescriptreact = { prettier },
       json = { prettier },
       markdown = { prettier },
+      graphql = { prettier },
       ruby = {
        function()
          return {

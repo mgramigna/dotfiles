@@ -9,16 +9,17 @@ return function()
       disable = {},
     },
     ensure_installed = {
-      "tsx",
+      "css",
+      "graphql",
+      "html",
       "java",
       "javascript",
+      "json",
       "lua",
       "python",
-      "json",
-      "typescript",
       "ruby",
-      "html",
-      "css"
+      "tsx",
+      "typescript"
     },
   }
 end
