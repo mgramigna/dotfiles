@@ -5,12 +5,16 @@
 Required dependencies:
 
 ```
-npm install -g prettier eslint
+npm install -g prettier eslint_d
+```
+
+```
+pip3 install virtualenv
 ```
 
 ## Tmux first time setup
 
-### Install tmp
+### Install tpm
 
 ```
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm

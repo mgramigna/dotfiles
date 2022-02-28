@@ -19,22 +19,17 @@ return packer.startup(function(use)
     }
   }
 
-  use { 'hrsh7th/nvim-cmp', config = require('plugin.nvim-cmp'), requires = {
-      { 'hrsh7th/cmp-nvim-lsp' },
-      { 'hrsh7th/cmp-buffer' },
-      { 'hrsh7th/cmp-path' },
-      { 'onsails/lspkind-nvim' },
+  -- Completion
+  use { 'ms-jpq/coq_nvim', branch = 'coq', requires = {
+      { 'ms-jpq/coq.artifacts', branch = 'artifacts' }
     }
   }
 
-  use { 'hrsh7th/cmp-vsnip', after = 'nvim-cmp', requires = {
-      { 'hrsh7th/vim-vsnip' },
-      { 'hrsh7th/vim-vsnip-integ' },
-    }
+  -- Diagnostics and formatting
+  use {'jose-elias-alvarez/null-ls.nvim', requires = {
+      'nvim-lua/plenary.nvim'
+    }, config = require('plugin.null-ls');
   }
-
-  -- Formatting
-  use { 'mhartington/formatter.nvim', config = require('plugin.formatter') }
 
   -- Syntax
   use { 'nvim-treesitter/nvim-treesitter', run = ":TSUpdate", config = require('plugin.treesitter') }

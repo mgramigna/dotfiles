@@ -1,10 +1,23 @@
 return function()
   local lsp_installer = require("nvim-lsp-installer")
 
-	local on_attach = function(_, bufnr)
-	  local function buf_set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
+  vim.g.coq_settings = {
+    auto_start = true,
+    keymap = {
+      jump_to_mark = '<c-g>',
+      manual_complete = '<c-y>'
+    }
+  }
 
-	  local noremap_silent_opts = { noremap=true, silent=true }
+  local coq = require("coq")
+
+  local on_attach = function(client, bufnr)
+    local function buf_set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
+
+    local noremap_silent_opts = { noremap=true, silent=true }
+
+    client.resolved_capabilities.document_formatting = false
+    client.resolved_capabilities.document_range_formatting = false
 
     buf_set_keymap('n', 'gD', '<Cmd>lua vim.lsp.buf.declaration()<CR>', noremap_silent_opts)
     buf_set_keymap('n', 'gd', '<Cmd>lua vim.lsp.buf.definition()<CR>', noremap_silent_opts)
@@ -16,28 +29,20 @@ return function()
     buf_set_keymap('n', ']g', '<cmd>lua vim.diagnostic.goto_next({ float = {border = "single"}})<CR>', noremap_silent_opts)
     buf_set_keymap('n', '[g', '<cmd>lua vim.diagnostic.goto_prev({ float = {border = "single"}})<CR>', noremap_silent_opts)
     buf_set_keymap('n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>', noremap_silent_opts)
-	end
-
-  local capabilites = require('cmp_nvim_lsp').update_capabilities(vim.lsp.protocol.make_client_capabilities())
+  end
 
   local config = {
     ["eslint"] = {
       on_attach = on_attach
     },
     ["tsserver"] = {
-      capabilites = capabilites,
       on_attach = on_attach,
       filetypes = { "typescript", "typescriptreact", "typescript.tsx" }
     },
-    ["tailwindcss"] = {
-      capabilites = capabilites
-    },
     ["solargraph"]= {
-      capabilites = capabilites,
       on_attach = on_attach
     },
     ["sumneko_lua"]= {
-      capabilites = capabilites,
       on_attach = on_attach,
       settings = {
         Lua = {
@@ -49,11 +54,9 @@ return function()
     },
     ["jdtls"] = {
       on_attach = on_attach,
-      capabilites = capabilites
     },
     ["pyright"] = {
       on_attach = on_attach,
-      capabilites = capabilites
     }
   }
 
@@ -61,9 +64,9 @@ return function()
     local opts = config[server.name]
 
     if (opts == nil) then
-      server:setup({})
+      server:setup(coq.lsp_ensure_capabilities({}))
     else
-      server:setup(opts)
+      server:setup(coq.lsp_ensure_capabilities(opts))
     end
     vim.cmd [[ do User LspAttachBuffers ]]
   end)
