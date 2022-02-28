@@ -12,19 +12,21 @@ return function()
     nls.builtins.diagnostics.eslint_d,
   }
 
-  vim.api.nvim_set_keymap('n', '<leader>f', '<cmd>lua vim.lsp.buf.formatting_sync()<cr>', { noremap = true })
-
   nls.setup({
     sources = sources,
     on_attach = function(client)
       if client.resolved_capabilities.document_formatting then
-            vim.cmd([[
-            augroup LspFormatting
-                autocmd!
-                autocmd BufWritePre *.js,*.ts,*.tsx,*.jsx,*.lua,*.rb lua vim.lsp.buf.formatting_sync()
-            augroup END
-            ]])
+            vim.api.nvim_create_augroup('LspFormatting', { clear = true })
+            vim.api.nvim_create_autocmd('BufWritePre',  {
+              group = 'LspFormatting',
+              pattern = { '*.js', '*.ts', '*.jsx', '*.tsx' },
+              callback = function()
+                vim.lsp.buf.formatting_sync()
+              end
+            })
         end
     end
   })
+
+  vim.api.nvim_set_keymap('n', '<leader>f', '<cmd>lua vim.api.nvim_do_autocmd("BufWritePre", { group = "LspFormatting" })<cr>', { noremap = true })
 end
