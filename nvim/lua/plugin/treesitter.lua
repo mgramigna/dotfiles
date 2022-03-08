@@ -8,18 +8,6 @@ return function()
       enable = false,
       disable = {},
     },
-    ensure_installed = {
-      "css",
-      "graphql",
-      "html",
-      "java",
-      "javascript",
-      "json",
-      "lua",
-      "python",
-      "ruby",
-      "tsx",
-      "typescript"
-    },
+    ensure_installed = "maintained"
   }
 end

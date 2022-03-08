@@ -57,6 +57,9 @@ return function()
     },
     ["pyright"] = {
       on_attach = on_attach,
+    },
+    ["rust_analyzer"] = {
+      on_attach = on_attach,
     }
   }
 
