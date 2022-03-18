@@ -13,16 +13,25 @@ return function()
     nls.builtins.diagnostics.eslint_d,
   }
 
+  local format_group = vim.api.nvim_create_augroup('Format', {
+    clear = true
+  })
+
+  vim.api.nvim_create_autocmd('BufWritePre',  {
+    pattern = { '*.js', '*.ts', '*.jsx', '*.tsx', '*.rs' },
+    callback = function()
+      vim.lsp.buf.formatting_sync()
+    end,
+    group = format_group
+  })
+
   nls.setup({
     sources = sources,
     on_attach = function(client)
       if client.resolved_capabilities.document_formatting then
-            vim.api.nvim_create_autocmd('BufWritePre',  {
-              pattern = { '*.js', '*.ts', '*.jsx', '*.tsx', '*.rs' },
-              callback = function()
-                vim.lsp.buf.formatting_sync()
-              end
-            })
+          vim.api.nvim_do_autocmd('BufWritePre', {
+            group = format_group
+          })
         end
     end
   })
