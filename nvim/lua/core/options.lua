@@ -16,9 +16,7 @@ o.backup = false
 o.hlsearch = false
 o.splitright = true
 
-if(vim.fn.has('termguicolors') == 1) then
-  o.termguicolors = true
-end
+if (vim.fn.has('termguicolors') == 1) then o.termguicolors = true end
 
 -- Colorscheme
 vim.cmd('colorscheme dracula')
