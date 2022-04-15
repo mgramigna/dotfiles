@@ -1,42 +1,39 @@
 return function()
-  local nls = require('null-ls')
+    local nls = require('null-ls')
 
-  local sources = {
-    nls.builtins.formatting.prettier.with({
-      filetypes = { 'javascript', 'typescript', 'javascriptreact', 'typescriptreact', 'json', 'markdown', 'graphql' },
-      prefer_local = "node_modules/.bin"
-    }),
-    nls.builtins.formatting.rubocop.with({
-      command = "bundle exec rubocop"
-    }),
-    nls.builtins.formatting.rustfmt,
-    nls.builtins.formatting.lua_format
-    --[[ nls.builtins.diagnostics.eslint_d,
+    local sources = {
+        nls.builtins.formatting.prettier.with({
+            filetypes = {
+                'javascript', 'typescript', 'javascriptreact',
+                'typescriptreact', 'json', 'markdown', 'graphql'
+            },
+            prefer_local = "node_modules/.bin"
+        }),
+        nls.builtins.formatting.rubocop.with({command = "bundle exec rubocop"}),
+        nls.builtins.formatting.rustfmt, nls.builtins.formatting.lua_format
+        --[[ nls.builtins.diagnostics.eslint_d,
     nls.builtins.code_actions.eslint_d, ]]
-  }
+    }
 
-  local format_group = vim.api.nvim_create_augroup('Format', {
-    clear = true
-  })
+    local format_group = vim.api.nvim_create_augroup('Format', {clear = true})
 
-  vim.api.nvim_create_autocmd('BufWritePre',  {
-    pattern = { '*.js', '*.ts', '*.jsx', '*.tsx', '*.rs', '*.lua' },
-    callback = function()
-      vim.lsp.buf.formatting_sync({}, 5000)
-    end,
-    group = format_group
-  })
+    vim.api.nvim_create_autocmd('BufWritePre', {
+        pattern = {'*.js', '*.ts', '*.jsx', '*.tsx', '*.rs', '*.lua'},
+        callback = function() vim.lsp.buf.formatting_sync({}, 5000) end,
+        group = format_group
+    })
 
-  nls.setup({
-    sources = sources,
-    on_attach = function(client)
-      if client.resolved_capabilities.document_formatting then
-          vim.api.nvim_do_autocmd('BufWritePre', {
-            group = format_group
-          })
+    nls.setup({
+        sources = sources,
+        on_attach = function(client)
+            if client.resolved_capabilities.document_formatting then
+                vim.api
+                    .nvim_exec_autocmds('BufWritePre', {group = format_group})
+            end
         end
-    end
-  })
+    })
 
-  vim.api.nvim_set_keymap('n', '<leader>f', '<cmd>lua vim.lsp.buf.formatting()<cr>', { noremap = true })
+    vim.api.nvim_set_keymap('n', '<leader>f',
+                            '<cmd>lua vim.lsp.buf.formatting()<cr>',
+                            {noremap = true})
 end
