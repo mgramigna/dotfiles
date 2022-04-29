@@ -11,14 +11,12 @@ return function()
         }),
         nls.builtins.formatting.rubocop.with({command = "bundle exec rubocop"}),
         nls.builtins.formatting.rustfmt, nls.builtins.formatting.lua_format
-        --[[ nls.builtins.diagnostics.eslint_d,
-    nls.builtins.code_actions.eslint_d, ]]
     }
 
     local format_group = vim.api.nvim_create_augroup('Format', {clear = true})
 
     vim.api.nvim_create_autocmd('BufWritePre', {
-        pattern = {'*.js', '*.ts', '*.jsx', '*.tsx', '*.rs', '*.lua'},
+        pattern = {'*.js', '*.mjs', '*.ts', '*.jsx', '*.tsx', '*.rs', '*.lua'},
         callback = function() vim.lsp.buf.formatting_sync({}, 5000) end,
         group = format_group
     })

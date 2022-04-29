@@ -41,6 +41,9 @@ return function()
                        noremap_silent_opts)
         buf_set_keymap('n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>',
                        noremap_silent_opts)
+        buf_set_keymap('n', '<leader>do',
+                       '<cmd>lua vim.lsp.buf.code_action()<CR>',
+                       noremap_silent_opts)
     end
 
     local config = {

@@ -20,7 +20,14 @@ return packer.startup(function(use)
     use {
         'neovim/nvim-lspconfig',
         config = require('plugin.lspconfig'),
-        requires = {{'williamboman/nvim-lsp-installer'}}
+        requires = {'williamboman/nvim-lsp-installer'}
+    }
+
+    -- UI
+    use {
+        'stevearc/dressing.nvim',
+        config = require('plugin.dressing'),
+        requires = {'nvim-telescope/telescope.nvim'}
     }
 
     -- Completion
@@ -75,12 +82,11 @@ return packer.startup(function(use)
     use {"npxbr/glow.nvim", run = ":GlowInstall"}
     use {
         'iamcco/markdown-preview.nvim',
-        run = function() vim.fn['mkdp#util#intall']() end,
+        run = function() vim.fn['mkdp#util#install']() end,
         ft = {'markdown'}
     }
 
     -- Editing Simplicity
     use {"beauwilliams/focus.nvim", config = require('plugin.focus')}
     use {'karb94/neoscroll.nvim', config = require('plugin.neoscroll')}
-
 end)
