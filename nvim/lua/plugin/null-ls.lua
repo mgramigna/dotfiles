@@ -17,14 +17,14 @@ return function()
 
     vim.api.nvim_create_autocmd('BufWritePre', {
         pattern = {'*.js', '*.mjs', '*.ts', '*.jsx', '*.tsx', '*.rs', '*.lua'},
-        callback = function() vim.lsp.buf.formatting_sync({}, 5000) end,
+        callback = function() vim.lsp.buf.format({}, 5000) end,
         group = format_group
     })
 
     nls.setup({
         sources = sources,
         on_attach = function(client)
-            if client.resolved_capabilities.document_formatting then
+            if client.server_capabilities.documentFormatting then
                 vim.api
                     .nvim_exec_autocmds('BufWritePre', {group = format_group})
             end
@@ -32,6 +32,6 @@ return function()
     })
 
     vim.api.nvim_set_keymap('n', '<leader>f',
-                            '<cmd>lua vim.lsp.buf.formatting()<cr>',
+                            '<cmd>lua vim.lsp.buf.format()<cr>',
                             {noremap = true})
 end

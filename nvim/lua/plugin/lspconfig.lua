@@ -15,8 +15,8 @@ return function()
 
         local noremap_silent_opts = {noremap = true, silent = true}
 
-        client.resolved_capabilities.document_formatting = false
-        client.resolved_capabilities.document_range_formatting = false
+        client.server_capabilities.documentFormatting = false
+        client.server_capabilities.documentFormatting = false
 
         buf_set_keymap('n', 'gD', '<Cmd>lua vim.lsp.buf.declaration()<CR>',
                        noremap_silent_opts)

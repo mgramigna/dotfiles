@@ -16,6 +16,9 @@ return packer.startup(function(use)
     -- Packer
     use 'wbthomason/packer.nvim'
 
+    -- Improve Startuptime
+    use 'lewis6991/impatient.nvim'
+
     -- LSP
     use {
         'neovim/nvim-lspconfig',
