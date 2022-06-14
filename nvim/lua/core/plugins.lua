@@ -48,12 +48,8 @@ return packer.startup(function(use)
 		requires = { { "ms-jpq/coq.artifacts", branch = "artifacts" } },
 	})
 
-	-- Diagnostics and formatting
-	use({
-		"jose-elias-alvarez/null-ls.nvim",
-		requires = { "nvim-lua/plenary.nvim" },
-		config = require("plugin.null-ls"),
-	})
+	-- Formatting
+	use({ "mhartington/formatter.nvim", config = require("plugin.formatter") })
 
 	-- Syntax
 	use({
