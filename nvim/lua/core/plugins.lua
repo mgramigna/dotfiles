@@ -42,10 +42,20 @@ return packer.startup(function(use)
 	})
 
 	-- Completion
+	use({ "rafamadriz/friendly-snippets" })
+
 	use({
-		"ms-jpq/coq_nvim",
-		branch = "coq",
-		requires = { { "ms-jpq/coq.artifacts", branch = "artifacts" } },
+		"hrsh7th/nvim-cmp",
+		requires = {
+			"hrsh7th/cmp-nvim-lsp",
+			"hrsh7th/cmp-buffer",
+			"hrsh7th/cmp-path",
+			"L3MON4D3/LuaSnip",
+			"saadparwaiz1/cmp_luasnip",
+			"onsails/lspkind.nvim",
+		},
+		config = require("plugin.cmp"),
+		after = "friendly-snippets",
 	})
 
 	-- Formatting

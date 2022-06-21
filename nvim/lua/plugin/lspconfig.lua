@@ -2,13 +2,6 @@ return function()
 	require("nvim-lsp-installer").setup({})
 	local lspconfig = require("lspconfig")
 
-	vim.g.coq_settings = {
-		auto_start = true,
-		keymap = { jump_to_mark = "<c-g>", manual_complete = "<c-y>" },
-	}
-
-	local coq = require("coq")
-
 	local function filter(name)
 		return name ~= nil and name ~= "null-ls" and name ~= "eslint" and name ~= "tailwindcss"
 	end
@@ -74,7 +67,16 @@ return function()
 		["solargraph"] = { on_attach = on_attach },
 		["sumneko_lua"] = {
 			on_attach = on_attach,
-			settings = { Lua = { diagnostics = { globals = { "vim" } } } },
+			settings = {
+				Lua = {
+					runtime = {
+						version = "LuaJIT",
+					},
+					diagnostics = {
+						globals = { "vim" },
+					},
+				},
+			},
 		},
 		["jdtls"] = { on_attach = on_attach },
 		["pyright"] = { on_attach = on_attach },
@@ -82,7 +84,8 @@ return function()
 		["ansiblels"] = { on_attach = on_attach },
 	}
 
+	local capabilities = require("cmp_nvim_lsp").update_capabilities(vim.lsp.protocol.make_client_capabilities())
 	for name, opts in pairs(servers) do
-		lspconfig[name].setup(coq.lsp_ensure_capabilities(opts))
+		lspconfig[name].setup(vim.tbl_extend("keep", opts, { capabilities = capabilities }))
 	end
 end
