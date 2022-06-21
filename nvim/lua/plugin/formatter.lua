@@ -31,4 +31,7 @@ return function()
 		command = "FormatWrite",
 		group = format_group,
 	})
+
+	vim.api.nvim_set_keymap("n", "<leader>f", "<cmd>Format<cr>", { noremap = true })
+	vim.api.nvim_set_keymap("n", "<leader>F", "<cmd>FormatWrite<cr>", { noremap = true })
 end
