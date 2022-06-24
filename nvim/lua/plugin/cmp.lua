@@ -14,7 +14,7 @@ return function()
 				require("luasnip").lsp_expand(args.body)
 			end,
 		},
-		document = {
+		window = {
 			completion = cmp.config.window.bordered(),
 			documentation = cmp.config.window.bordered(),
 		},

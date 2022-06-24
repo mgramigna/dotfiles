@@ -10,6 +10,9 @@ return function()
 			javascriptreact = {
 				require("formatter.filetypes.javascriptreact").prettier,
 			},
+			json = {
+				require("formatter.filetypes.json").prettier,
+			},
 			typescript = {
 				require("formatter.filetypes.typescript").prettier,
 			},
