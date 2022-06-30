@@ -68,12 +68,7 @@ return packer.startup(function(use)
 		config = require("plugin.treesitter"),
 	})
 
-	use({
-		"lewis6991/spellsitter.nvim",
-		config = function()
-			require("spellsitter").setup()
-		end,
-	})
+	use({ "p00f/nvim-ts-rainbow", requires = "nvim-treesitter/nvim-treesitter" })
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
@@ -91,6 +86,8 @@ return packer.startup(function(use)
 	})
 
 	-- Files
+	use({ "nvim-telescope/telescope-fzf-native.nvim", run = "make" })
+
 	use({
 		"nvim-telescope/telescope.nvim",
 		config = require("plugin.telescope"),

@@ -13,9 +13,14 @@ return function()
 			treesitter = { theme = "dropdown" },
 			spell_suggest = { theme = "cursor" },
 		},
-		--[[ extensions = {
-            ["ui-select"] = {require('telescope.themes').get_cursor {}}
-        } ]]
+		extensions = {
+			fzf = {
+				fuzzy = true,
+				override_generic_sorter = true,
+				override_file_sorter = true,
+				case_mode = "smart_case",
+			},
+		},
 	})
 
 	vim.api.nvim_set_keymap(
@@ -55,5 +60,5 @@ return function()
 		{ noremap = true, silent = true }
 	)
 
-	-- require("telescope").load_extension("ui-select")
+	require("telescope").load_extension("fzf")
 end
