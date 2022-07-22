@@ -3,7 +3,7 @@ return function()
 	local lspconfig = require("lspconfig")
 
 	local function filter(name)
-		return name ~= nil and name ~= "null-ls" and name ~= "eslint" and name ~= "tailwindcss"
+		return name ~= nil and name ~= "eslint" and name ~= "tailwindcss"
 	end
 
 	function _G.do_rename()
