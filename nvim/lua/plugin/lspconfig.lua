@@ -82,6 +82,7 @@ return function()
 		["pyright"] = { on_attach = on_attach },
 		["rust_analyzer"] = { on_attach = on_attach },
 		["ansiblels"] = { on_attach = on_attach },
+		["texlab"] = { on_attach = on_attach },
 	}
 
 	local capabilities = require("cmp_nvim_lsp").update_capabilities(vim.lsp.protocol.make_client_capabilities())
