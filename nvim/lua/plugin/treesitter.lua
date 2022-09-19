@@ -1,7 +1,13 @@
 return function()
 	require("nvim-treesitter.configs").setup({
-		ensure_installed = "all",
-		ignore_install = { "phpdoc" },
+		ensure_installed = {
+			"javascript",
+			"json",
+			"lua",
+			"tsx",
+			"typescript",
+			"java",
+		},
 		highlight = { enable = true, disable = {} },
 		indent = { enable = false, disable = {} },
 		rainbow = {

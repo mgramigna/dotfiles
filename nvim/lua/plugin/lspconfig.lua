@@ -1,6 +1,10 @@
 return function()
 	require("nvim-lsp-installer").setup({})
+	vim.lsp.set_log_level("debug")
 	local lspconfig = require("lspconfig")
+	local saga = require("lspsaga")
+
+	saga.init_lsp_saga()
 
 	local function filter(name)
 		return name ~= nil and name ~= "eslint" and name ~= "tailwindcss"
@@ -31,27 +35,16 @@ return function()
 		buf_set_keymap("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "<leader>rn", "<cmd>lua do_rename()<CR>", noremap_silent_opts)
-		buf_set_keymap("n", "gr", "<cmd>lua vim.lsp.buf.references()<CR>", noremap_silent_opts)
-		buf_set_keymap(
-			"n",
-			"<leader>e",
-			'<cmd>lua vim.diagnostic.open_float(0, { border = "single", scope="line" })<CR>',
-			noremap_silent_opts
-		)
-		buf_set_keymap(
-			"n",
-			"]g",
-			'<cmd>lua vim.diagnostic.goto_next({ float = {border = "single"}})<CR>',
-			noremap_silent_opts
-		)
-		buf_set_keymap(
-			"n",
-			"[g",
-			'<cmd>lua vim.diagnostic.goto_prev({ float = {border = "single"}})<CR>',
-			noremap_silent_opts
-		)
-		buf_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", noremap_silent_opts)
-		buf_set_keymap("n", "<leader>do", "<cmd>lua vim.lsp.buf.code_action()<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", noremap_silent_opts)
+
+		buf_set_keymap("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", noremap_silent_opts)
+		-- buf_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "K", "<cmd>Lspsaga hover_doc<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", { silent = true })
+		-- buf_set_keymap("n", "<leader>do", "<cmd>lua vim.lsp.buf.code_action()<CR>", noremap_silent_opts)
 	end
 
 	local servers = {

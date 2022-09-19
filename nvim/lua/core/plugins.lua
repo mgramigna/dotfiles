@@ -34,6 +34,11 @@ return packer.startup(function(use)
 		requires = { "williamboman/nvim-lsp-installer" },
 	})
 
+	use({
+		"glepnir/lspsaga.nvim",
+		branch = "main",
+	})
+
 	-- UI
 	use({
 		"stevearc/dressing.nvim",
@@ -61,7 +66,7 @@ return packer.startup(function(use)
 	-- Formatting
 	use({ "mhartington/formatter.nvim", config = require("plugin.formatter") })
 
-	-- Syntax
+	-- Treesitter Misc
 	use({
 		"nvim-treesitter/nvim-treesitter",
 		run = ":TSUpdate",
@@ -69,6 +74,20 @@ return packer.startup(function(use)
 	})
 
 	use({ "p00f/nvim-ts-rainbow", requires = "nvim-treesitter/nvim-treesitter" })
+	use({
+		"nvim-treesitter/nvim-treesitter-context",
+		requires = "nvim-treesitter/nvim-treesitter",
+		config = function()
+			require("treesitter-context").setup()
+		end,
+	})
+	use({
+		"windwp/nvim-ts-autotag",
+		requires = { "nvim-treesitter/nvim-treesitter" },
+		config = function()
+			require("nvim-ts-autotag").setup()
+		end,
+	})
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
@@ -90,6 +109,7 @@ return packer.startup(function(use)
 
 	use({
 		"nvim-telescope/telescope.nvim",
+		tag = "0.1.0",
 		config = require("plugin.telescope"),
 		requires = { "nvim-lua/popup.nvim", "nvim-lua/plenary.nvim" },
 	})
@@ -103,13 +123,18 @@ return packer.startup(function(use)
 		requires = { "nvim-lua/plenary.nvim" },
 		config = require("plugin.gitsigns"),
 	})
+	use({
+		"sindrets/diffview.nvim",
+		requires = "nvim-lua/plenary.nvim",
+		config = require("plugin.diffview"),
+	})
 
 	-- Markdown
 	use({ "npxbr/glow.nvim", run = ":GlowInstall" })
 	use({
 		"iamcco/markdown-preview.nvim",
 		run = function()
-			vim.fn["mkdp#util#install"]()
+			fn["mkdp#util#install"]()
 		end,
 		ft = { "markdown" },
 	})
@@ -117,21 +142,4 @@ return packer.startup(function(use)
 	-- Editing Simplicity
 	use({ "beauwilliams/focus.nvim", config = require("plugin.focus") })
 	use({ "karb94/neoscroll.nvim", config = require("plugin.neoscroll") })
-
-	-- Web Dev
-	use({
-		"windwp/nvim-ts-autotag",
-		requires = { "nvim-treesitter/nvim-treesitter" },
-		config = function()
-			require("nvim-ts-autotag").setup()
-		end,
-	})
-
-	use({
-		"napmn/react-extract.nvim",
-		config = function()
-			require("react-extract").setup()
-			vim.keymap.set({ "v" }, "<Leader>re", require("react-extract").extract_to_new_file)
-		end,
-	})
 end)
