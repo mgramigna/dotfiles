@@ -9,3 +9,6 @@ vim.api.nvim_set_keymap("n", "<leader>bd", ":%bd|e#<cr>", { noremap = true })
 
 -- Run mdpf on current markdown file
 vim.api.nvim_create_user_command("MDExport", "!mdpdf %", {})
+
+-- Replace text in visual selection without overwriting paste register (clutch)
+vim.api.nvim_set_keymap("v", "<leader>p", '"_dP', { silent = true, noremap = true })

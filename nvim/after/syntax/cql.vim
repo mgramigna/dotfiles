@@ -4,8 +4,6 @@ endif
 
 let b:current_syntax = "cql"
 
-
-
 " Reserved words
 syn keyword cqlKeywordDeclarations define function library using include version called parameter default valueset code codesystems display public private context
 syn keyword cqlKeywordConst Patient Population null

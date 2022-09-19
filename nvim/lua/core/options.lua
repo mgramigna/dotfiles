@@ -15,6 +15,7 @@ o.swapfile = false
 o.backup = false
 o.hlsearch = false
 o.splitright = true
+o.mouse = ""
 
 if vim.fn.has("termguicolors") == 1 then
 	o.termguicolors = true
