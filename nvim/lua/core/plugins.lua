@@ -88,6 +88,7 @@ return packer.startup(function(use)
 			require("nvim-ts-autotag").setup()
 		end,
 	})
+	use("nvim-treesitter/playground")
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
