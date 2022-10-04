@@ -34,17 +34,14 @@ return function()
 		buf_set_keymap("n", "gd", "<Cmd>lua vim.lsp.buf.definition()<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", noremap_silent_opts)
-		buf_set_keymap("n", "<leader>rn", "<cmd>lua do_rename()<CR>", noremap_silent_opts)
+		buf_set_keymap("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", noremap_silent_opts)
-
 		buf_set_keymap("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", noremap_silent_opts)
-		-- buf_set_keymap("n", "K", "<cmd>lua vim.lsp.buf.hover()<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "K", "<cmd>Lspsaga hover_doc<CR>", noremap_silent_opts)
 		buf_set_keymap("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", { silent = true })
-		-- buf_set_keymap("n", "<leader>do", "<cmd>lua vim.lsp.buf.code_action()<CR>", noremap_silent_opts)
 	end
 
 	local servers = {
