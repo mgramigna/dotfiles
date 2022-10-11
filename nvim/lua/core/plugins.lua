@@ -1,4 +1,5 @@
 local execute = vim.api.nvim_command
+
 local fn = vim.fn
 
 local install_path = fn.stdpath("data") .. "/site/pack/packer/start/packer.nvim"
@@ -89,6 +90,17 @@ return packer.startup(function(use)
 		end,
 	})
 	use("nvim-treesitter/playground")
+	use({
+		"phelipetls/jsonpath.nvim",
+		config = function()
+			vim.api.nvim_create_autocmd({ "BufEnter", "BufRead" }, {
+				pattern = "*.json",
+				callback = function()
+					vim.opt_local.winbar = "%{luaeval('require(\"jsonpath\").get()')}"
+				end,
+			})
+		end,
+	})
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")

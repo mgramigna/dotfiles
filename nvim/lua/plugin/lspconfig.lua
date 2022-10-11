@@ -52,7 +52,7 @@ return function()
 		["eslint"] = { on_attach = on_attach },
 		["tsserver"] = {
 			on_attach = on_attach,
-			filetypes = { "typescript", "typescriptreact", "typescript.tsx" },
+			filetypes = { "typescript", "typescriptreact", "typescript.tsx", "javascript" },
 		},
 		["solargraph"] = { on_attach = on_attach },
 		["sumneko_lua"] = {
