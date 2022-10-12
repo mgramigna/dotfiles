@@ -4,9 +4,9 @@ echo 'Copying files from repo into directories'
 timestamp=$(date +%s)
 
 mv ~/.config/nvim/ ~/.config/nvim-$timestamp.bak
-mv ~/.tmux.conf ~/.tmux.conf-$timestamp.bak
+mv ~/.config/tmux/ ~/.config/tmux/tmux-$timestamp.bak
 
 cp -r nvim ~/.config/
-cp ./.tmux.conf ~
+cp -r tmux ~/.config/
 
 echo 'Done'
