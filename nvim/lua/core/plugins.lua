@@ -105,7 +105,18 @@ return packer.startup(function(use)
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
 	use({ "nvim-lualine/lualine.nvim", config = require("plugin.lualine") })
-	use({ "dracula/vim", as = "dracula" })
+	use({
+		"dracula/vim",
+		as = "dracula",
+		-- commit = "d7723a842a6cfa2f62cf85530ab66eb418521dc2",
+		config = function()
+			-- Colorscheme
+			vim.cmd("colorscheme dracula")
+
+			-- Spell
+			vim.cmd("hi SpellBad cterm=underline")
+		end,
+	})
 
 	-- Editing Keybinds
 	use("tpope/vim-commentary")

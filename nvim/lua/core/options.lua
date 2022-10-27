@@ -18,13 +18,8 @@ o.splitright = true
 o.mouse = ""
 o.spell = true
 o.spelloptions = "camel"
+o.cmdheight = 0
 
 if vim.fn.has("termguicolors") == 1 then
 	o.termguicolors = true
 end
-
--- Colorscheme
-vim.cmd("colorscheme dracula")
-
--- Spell
-vim.cmd("hi SpellBad cterm=underline")
