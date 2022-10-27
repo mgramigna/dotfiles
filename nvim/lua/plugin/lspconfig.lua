@@ -1,6 +1,5 @@
 return function()
 	require("nvim-lsp-installer").setup({})
-	vim.lsp.set_log_level("debug")
 	local lspconfig = require("lspconfig")
 	local saga = require("lspsaga")
 
@@ -46,7 +45,7 @@ return function()
 
 	local servers = {
 		["tailwindcss"] = {
-			filetypes = { "javascriptreact", "typescriptreact" },
+			filetypes = { "javascriptreact", "typescriptreact", "astro" },
 			on_attach = on_attach,
 		},
 		["eslint"] = { on_attach = on_attach },
@@ -65,6 +64,12 @@ return function()
 					diagnostics = {
 						globals = { "vim" },
 					},
+					workspace = {
+						library = {
+							[vim.fn.expand("$VIMRUNTIME/lua")] = true,
+							[vim.fn.expand("$VIMRUNTIME/lua/vim/lsp")] = true,
+						},
+					},
 				},
 			},
 		},
@@ -73,9 +78,11 @@ return function()
 		["rust_analyzer"] = { on_attach = on_attach },
 		["ansiblels"] = { on_attach = on_attach },
 		["texlab"] = { on_attach = on_attach },
+		["prismals"] = { on_attach = on_attach },
+		["astro"] = { on_attach = on_attach },
 	}
 
-	local capabilities = require("cmp_nvim_lsp").update_capabilities(vim.lsp.protocol.make_client_capabilities())
+	local capabilities = require("cmp_nvim_lsp").default_capabilities()
 	for name, opts in pairs(servers) do
 		lspconfig[name].setup(vim.tbl_extend("keep", opts, { capabilities = capabilities }))
 	end

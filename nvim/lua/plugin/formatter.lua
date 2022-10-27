@@ -1,4 +1,5 @@
 return function()
+	local util = require("formatter.util")
 	require("formatter").setup({
 		filetype = {
 			lua = {
@@ -13,6 +14,9 @@ return function()
 			json = {
 				require("formatter.filetypes.json").prettier,
 			},
+			markdown = {
+				require("formatter.filetypes.markdown").prettier,
+			},
 			typescript = {
 				require("formatter.filetypes.typescript").prettier,
 			},
@@ -24,6 +28,22 @@ return function()
 			},
 			rust = {
 				require("formatter.filetypes.rust").rustfmt,
+			},
+			astro = {
+				function()
+					return {
+						exe = "prettier",
+						args = {
+							"--stdin-filepath",
+							util.escape_path(util.get_current_buffer_file_path()),
+							"--parser",
+							"astro",
+							"--plugin-search-dir=.",
+						},
+						stdin = true,
+						try_node_modules = true,
+					}
+				end,
 			},
 		},
 	})

@@ -117,6 +117,12 @@ return packer.startup(function(use)
 			vim.cmd("hi SpellBad cterm=underline")
 		end,
 	})
+	use({
+		"j-hui/fidget.nvim",
+		config = function()
+			require("fidget").setup({})
+		end,
+	})
 
 	-- Editing Keybinds
 	use("tpope/vim-commentary")
@@ -133,12 +139,13 @@ return packer.startup(function(use)
 
 	use({
 		"nvim-telescope/telescope.nvim",
-		tag = "0.1.0",
 		config = require("plugin.telescope"),
 		requires = { "nvim-lua/popup.nvim", "nvim-lua/plenary.nvim" },
 	})
 
 	use({ "kyazdani42/nvim-tree.lua", config = require("plugin.nvim-tree") })
+
+	use({ "ThePrimeagen/harpoon", config = require("plugin.harpoon"), requires = "nvim-telescope/telescope.nvim" })
 
 	-- Git
 	use("tpope/vim-fugitive")

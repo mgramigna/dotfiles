@@ -8,6 +8,8 @@ return function()
 			"typescript",
 			"java",
 			"query",
+			"prisma",
+			"rust",
 		},
 		highlight = { enable = true, disable = {} },
 		indent = { enable = false, disable = {} },
@@ -32,6 +34,12 @@ return function()
 				goto_node = "<cr>",
 				show_help = "?",
 			},
+		},
+		context_commentstring = {
+			enable = true,
+		},
+		autotag = {
+			enable = true,
 		},
 	})
 end

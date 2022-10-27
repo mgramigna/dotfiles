@@ -6,10 +6,7 @@ return function()
 			file_ignore_patterns = { "^.git/" },
 		},
 		pickers = {
-			find_files = { theme = "ivy" },
-			live_grep = { theme = "ivy" },
-			grep_string = { theme = "ivy" },
-			buffers = { theme = "ivy" },
+			buffers = { theme = "dropdown" },
 			treesitter = { theme = "dropdown" },
 			spell_suggest = { theme = "cursor" },
 		},
@@ -61,4 +58,5 @@ return function()
 	)
 
 	require("telescope").load_extension("fzf")
+	require("telescope").load_extension("harpoon")
 end
