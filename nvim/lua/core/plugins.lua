@@ -85,15 +85,14 @@ return packer.startup(function(use)
 	use({
 		"windwp/nvim-ts-autotag",
 		requires = { "nvim-treesitter/nvim-treesitter" },
-		config = function()
-			require("nvim-ts-autotag").setup()
-		end,
 	})
 	use("nvim-treesitter/playground")
 	use({
 		"phelipetls/jsonpath.nvim",
 		config = function()
+			local jsonpath_group = vim.api.nvim_create_augroup("JsonPath", { clear = true })
 			vim.api.nvim_create_autocmd({ "BufEnter", "BufRead" }, {
+				group = jsonpath_group,
 				pattern = "*.json",
 				callback = function()
 					vim.opt_local.winbar = "%{luaeval('require(\"jsonpath\").get()')}"
