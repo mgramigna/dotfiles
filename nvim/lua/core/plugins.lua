@@ -100,6 +100,7 @@ return packer.startup(function(use)
 			})
 		end,
 	})
+	use("JoosepAlviste/nvim-ts-context-commentstring")
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
@@ -107,7 +108,7 @@ return packer.startup(function(use)
 	use({ "dracula/vim", as = "dracula" })
 
 	-- Editing Keybinds
-	use("b3nj5m1n/kommentary")
+	use("tpope/vim-commentary")
 	use("tpope/vim-surround")
 	use({
 		"ggandor/leap.nvim",
