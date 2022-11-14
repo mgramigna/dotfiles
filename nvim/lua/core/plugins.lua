@@ -113,7 +113,6 @@ return packer.startup(function(use)
 	use({
 		"dracula/vim",
 		as = "dracula",
-		-- commit = "d7723a842a6cfa2f62cf85530ab66eb418521dc2",
 		config = function()
 			-- Colorscheme
 			vim.cmd("colorscheme dracula")
@@ -127,6 +126,10 @@ return packer.startup(function(use)
 		config = function()
 			require("fidget").setup({})
 		end,
+	})
+	use({
+		"goolord/alpha-nvim",
+		config = require("plugin.alpha"),
 	})
 
 	-- Editing Keybinds

@@ -13,6 +13,9 @@ vim.api.nvim_create_user_command("MDExport", "!mdpdf %", {})
 -- Replace text in visual selection without overwriting paste register (clutch)
 vim.api.nvim_set_keymap("v", "<leader>p", '"_dP', { silent = true, noremap = true })
 
+-- Map jk to escape
+vim.api.nvim_set_keymap("i", "jk", "<esc>", { noremap = true })
+
 vim.api.nvim_set_keymap("n", "<C-u>", "<C-u>zz", { silent = true, noremap = true })
 vim.api.nvim_set_keymap("n", "<C-d>", "<C-d>zz", { silent = true, noremap = true })
 vim.api.nvim_set_keymap("n", "n", "nzz", { silent = true, noremap = true })
