@@ -86,3 +86,12 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
 		vim.api.nvim_set_keymap("n", "<leader>cl", ":lua console_log_blank()<CR>", { noremap = true, silent = true })
 	end,
 })
+
+local hl_yank_group = vim.api.nvim_create_augroup("HighlightYank", { clear = true })
+
+vim.api.nvim_create_autocmd("TextYankPost", {
+	group = hl_yank_group,
+	callback = function()
+		vim.highlight.on_yank({ on_visual = false })
+	end,
+})
