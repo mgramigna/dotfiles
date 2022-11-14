@@ -75,6 +75,7 @@ return packer.startup(function(use)
 	})
 
 	use({ "p00f/nvim-ts-rainbow", requires = "nvim-treesitter/nvim-treesitter" })
+
 	use({
 		"nvim-treesitter/nvim-treesitter-context",
 		requires = "nvim-treesitter/nvim-treesitter",
@@ -82,11 +83,14 @@ return packer.startup(function(use)
 			require("treesitter-context").setup()
 		end,
 	})
+
 	use({
 		"windwp/nvim-ts-autotag",
 		requires = { "nvim-treesitter/nvim-treesitter" },
 	})
+
 	use("nvim-treesitter/playground")
+
 	use({
 		"phelipetls/jsonpath.nvim",
 		config = function()
@@ -100,6 +104,7 @@ return packer.startup(function(use)
 			})
 		end,
 	})
+
 	use("JoosepAlviste/nvim-ts-context-commentstring")
 
 	-- Appearance
@@ -172,5 +177,4 @@ return packer.startup(function(use)
 
 	-- Editing Simplicity
 	use({ "beauwilliams/focus.nvim", config = require("plugin.focus") })
-	use({ "karb94/neoscroll.nvim", config = require("plugin.neoscroll") })
 end)
