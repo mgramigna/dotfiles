@@ -1,0 +1,15 @@
+env:
+  TERM: xterm-256color
+import:
+  - ~/.config/alacritty/theme/dracula.yml
+font:
+  normal:
+    family:
+      Hack Nerd Font
+window:
+  dimensions:
+    columns: 130
+    lines: 30
+key_bindings:
+    - { key: Return, mods: Command, action: ToggleFullscreen }
+    - { key: Key6, mods: Control, chars: "\x1b[94;5u" }
