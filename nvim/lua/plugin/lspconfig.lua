@@ -1,23 +1,28 @@
 return function()
-	require("nvim-lsp-installer").setup({})
+	require("mason").setup()
+	require("mason-lspconfig").setup({
+		ensure_installed = {
+			"tailwindcss",
+			"eslint",
+			"tsserver",
+			"solargraph",
+			"sumneko_lua",
+			"jdtls",
+			"pyright",
+			"rust_analyzer",
+			"ansiblels",
+			"texlab",
+			"prismals",
+			"astro",
+			"clangd",
+		},
+		automatic_installation = true,
+	})
+
 	local lspconfig = require("lspconfig")
 	local saga = require("lspsaga")
 
 	saga.init_lsp_saga()
-
-	local function filter(name)
-		return name ~= nil and name ~= "eslint" and name ~= "tailwindcss"
-	end
-
-	function _G.do_rename()
-		vim.lsp.buf.rename(nil, {
-			filter = function(clients)
-				local names = vim.tbl_filter(filter, clients)
-
-				return #names ~= 0
-			end,
-		})
-	end
 
 	local on_attach = function(client, bufnr)
 		local function buf_set_keymap(...)
@@ -43,47 +48,35 @@ return function()
 		buf_set_keymap("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", { silent = true })
 	end
 
-	local servers = {
-		["tailwindcss"] = {
-			filetypes = { "javascriptreact", "typescriptreact", "astro" },
-			on_attach = on_attach,
-		},
-		["eslint"] = { on_attach = on_attach },
-		["tsserver"] = {
-			on_attach = on_attach,
-			filetypes = { "typescript", "typescriptreact", "typescript.tsx", "javascript" },
-		},
-		["solargraph"] = { on_attach = on_attach },
-		["sumneko_lua"] = {
-			on_attach = on_attach,
-			settings = {
-				Lua = {
-					runtime = {
-						version = "LuaJIT",
-					},
-					diagnostics = {
-						globals = { "vim" },
-					},
-					workspace = {
-						library = {
-							[vim.fn.expand("$VIMRUNTIME/lua")] = true,
-							[vim.fn.expand("$VIMRUNTIME/lua/vim/lsp")] = true,
+	local capabilities = require("cmp_nvim_lsp").default_capabilities()
+	require("mason-lspconfig").setup_handlers({
+		function(server_name)
+			lspconfig[server_name].setup({
+				on_attach = on_attach,
+				capabilities = capabilities,
+			})
+		end,
+		["sumneko_lua"] = function()
+			lspconfig["sumneko_lua"].setup({
+				on_attach = on_attach,
+				capabilities = capabilities,
+				settings = {
+					Lua = {
+						runtime = {
+							version = "LuaJIT",
+						},
+						diagnostics = {
+							globals = { "vim" },
+						},
+						workspace = {
+							library = {
+								[vim.fn.expand("$VIMRUNTIME/lua")] = true,
+								[vim.fn.expand("$VIMRUNTIME/lua/vim/lsp")] = true,
+							},
 						},
 					},
 				},
-			},
-		},
-		["jdtls"] = { on_attach = on_attach },
-		["pyright"] = { on_attach = on_attach },
-		["rust_analyzer"] = { on_attach = on_attach },
-		["ansiblels"] = { on_attach = on_attach },
-		["texlab"] = { on_attach = on_attach },
-		["prismals"] = { on_attach = on_attach },
-		["astro"] = { on_attach = on_attach },
-	}
-
-	local capabilities = require("cmp_nvim_lsp").default_capabilities()
-	for name, opts in pairs(servers) do
-		lspconfig[name].setup(vim.tbl_extend("keep", opts, { capabilities = capabilities }))
-	end
+			})
+		end,
+	})
 end
