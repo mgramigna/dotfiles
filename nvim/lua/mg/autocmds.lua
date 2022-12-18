@@ -97,3 +97,15 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 		vim.highlight.on_yank({ on_visual = false })
 	end,
 })
+
+local cmd_height_group = vim.api.nvim_create_augroup("CmdHeight", { clear = true })
+
+vim.api.nvim_create_autocmd("RecordingEnter", {
+	group = cmd_height_group,
+	command = "setlocal cmdheight=1",
+})
+
+vim.api.nvim_create_autocmd("RecordingLeave", {
+	group = cmd_height_group,
+	command = "setlocal cmdheight=0",
+})
