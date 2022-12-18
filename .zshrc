@@ -2,6 +2,7 @@ alias vim="nvim"
 alias vi="/usr/bin/vim"
 alias ta="tmux attach"
 alias tns="tmux new-session -t"
+alias ts="tmux-sessionizer"
 
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
