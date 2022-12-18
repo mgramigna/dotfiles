@@ -19,37 +19,18 @@ return packer.startup(function(use)
 	-- Packer
 	use({
 		"wbthomason/packer.nvim",
-		config = function()
-			vim.api.nvim_set_keymap("n", "<leader>ps", ":PackerSync<cr>", { noremap = true })
-			vim.api.nvim_set_keymap("n", "<leader>pc", ":PackerCompile<cr>", { noremap = true })
-		end,
 	})
-
-	-- Improve Startuptime
-	use("lewis6991/impatient.nvim")
 
 	-- LSP
 	use({
-		"neovim/nvim-lspconfig",
-		config = require("plugin.lspconfig"),
-		requires = { "williamboman/mason.nvim", "williamboman/mason-lspconfig.nvim" },
-	})
-
-	use({
 		"williamboman/mason.nvim",
 		"williamboman/mason-lspconfig.nvim",
+		"neovim/nvim-lspconfig",
 	})
 
 	use({
 		"glepnir/lspsaga.nvim",
 		branch = "main",
-	})
-
-	-- UI
-	use({
-		"stevearc/dressing.nvim",
-		config = require("plugin.dressing"),
-		requires = { "nvim-telescope/telescope.nvim" },
 	})
 
 	-- Completion
@@ -65,18 +46,16 @@ return packer.startup(function(use)
 			"saadparwaiz1/cmp_luasnip",
 			"onsails/lspkind.nvim",
 		},
-		config = require("plugin.cmp"),
 		after = "friendly-snippets",
 	})
 
 	-- Formatting
-	use({ "mhartington/formatter.nvim", config = require("plugin.formatter") })
+	use({ "mhartington/formatter.nvim" })
 
 	-- Treesitter Misc
 	use({
 		"nvim-treesitter/nvim-treesitter",
 		run = ":TSUpdate",
-		config = require("plugin.treesitter"),
 	})
 
 	use({ "p00f/nvim-ts-rainbow", requires = "nvim-treesitter/nvim-treesitter" })
@@ -84,9 +63,6 @@ return packer.startup(function(use)
 	use({
 		"nvim-treesitter/nvim-treesitter-context",
 		requires = "nvim-treesitter/nvim-treesitter",
-		config = function()
-			require("treesitter-context").setup()
-		end,
 	})
 
 	use({
@@ -98,53 +74,34 @@ return packer.startup(function(use)
 
 	use({
 		"phelipetls/jsonpath.nvim",
-		config = function()
-			local jsonpath_group = vim.api.nvim_create_augroup("JsonPath", { clear = true })
-			vim.api.nvim_create_autocmd({ "BufEnter", "BufRead" }, {
-				group = jsonpath_group,
-				pattern = "*.json",
-				callback = function()
-					vim.opt_local.winbar = "%{luaeval('require(\"jsonpath\").get()')}"
-				end,
-			})
-		end,
 	})
 
 	use("JoosepAlviste/nvim-ts-context-commentstring")
 
 	-- Appearance
 	use("kyazdani42/nvim-web-devicons")
-	use({ "nvim-lualine/lualine.nvim", config = require("plugin.lualine") })
+	use({ "nvim-lualine/lualine.nvim" })
 	use({
 		"dracula/vim",
 		as = "dracula",
 		config = function()
-			-- Colorscheme
 			vim.cmd("colorscheme dracula")
-
-			-- Spell
 			vim.cmd("hi SpellBad cterm=underline")
 		end,
 	})
 	use({
 		"j-hui/fidget.nvim",
-		config = function()
-			require("fidget").setup({})
-		end,
 	})
 	use({
 		"goolord/alpha-nvim",
-		config = require("plugin.alpha"),
 	})
+	use("folke/zen-mode.nvim")
 
 	-- Editing Keybinds
 	use("tpope/vim-commentary")
 	use("tpope/vim-surround")
 	use({
 		"ggandor/leap.nvim",
-		config = function()
-			require("leap").set_default_keymaps()
-		end,
 	})
 
 	-- Files
@@ -152,25 +109,21 @@ return packer.startup(function(use)
 
 	use({
 		"nvim-telescope/telescope.nvim",
-		config = require("plugin.telescope"),
-		requires = { "nvim-lua/popup.nvim", "nvim-lua/plenary.nvim" },
+		tag = "0.1.0",
+		requires = { "nvim-lua/plenary.nvim" },
 	})
 
-	use({ "kyazdani42/nvim-tree.lua", config = require("plugin.nvim-tree") })
-
-	use({ "ThePrimeagen/harpoon", config = require("plugin.harpoon"), requires = "nvim-telescope/telescope.nvim" })
+	use("theprimeagen/harpoon")
 
 	-- Git
 	use("tpope/vim-fugitive")
 	use({
 		"lewis6991/gitsigns.nvim",
 		requires = { "nvim-lua/plenary.nvim" },
-		config = require("plugin.gitsigns"),
 	})
 	use({
 		"sindrets/diffview.nvim",
 		requires = "nvim-lua/plenary.nvim",
-		config = require("plugin.diffview"),
 	})
 
 	-- Markdown
@@ -182,7 +135,4 @@ return packer.startup(function(use)
 		end,
 		ft = { "markdown" },
 	})
-
-	-- Editing Simplicity
-	use({ "beauwilliams/focus.nvim", config = require("plugin.focus") })
 end)

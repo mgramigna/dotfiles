@@ -1,5 +1,0 @@
-return function()
-	require("nvim-tree").setup({})
-
-	vim.api.nvim_set_keymap("n", "<C-n>", ":NvimTreeToggle<cr>", { noremap = true })
-end
