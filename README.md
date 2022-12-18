@@ -1,19 +1,30 @@
-# Config files for neovim and tmux
+## Link files
+
+To link all dotfiles:
+
+```
+make
+```
+
+This will also create backups of existing directory in `./backups`
+
+To link an individual dotfile:
+
+```
+make nvim # or
+make alacritty # or
+make tmux
+```
 
 ## Neovim first time setup
 
-Required dependencies:
+Recommended dependencies (not required):
+
+- Install [ripgrep](https://github.com/BurntSushi/ripgrep) (improves Telescope and vimgrep experience)
+- Install [prettier](https://prettier.io/) (allows for formatter to work globally):
 
 ```
-npm install -g prettier eslint_d
-```
-
-```
-pip3 install virtualenv
-```
-
-```
-brew install ripgrep
+npm install -g prettier
 ```
 
 ## Tmux first time setup
@@ -21,7 +32,7 @@ brew install ripgrep
 ### Install tpm
 
 ```
-git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+make tpm
 ```
 
 ### Install reattach-to-user-namespace For System Clipboard (macOS only)
@@ -29,4 +40,3 @@ git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 ```
 brew install reattach-to-user-namespace
 ```
-
