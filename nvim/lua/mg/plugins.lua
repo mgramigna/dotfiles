@@ -135,4 +135,6 @@ return packer.startup(function(use)
 		end,
 		ft = { "markdown" },
 	})
+
+	use("mbbill/undotree")
 end)
