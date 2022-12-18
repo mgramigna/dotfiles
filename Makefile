@@ -1,9 +1,13 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux
+.PHONY: alacritty nvim tmux scripts
 
-all: nvim tmux alacritty
+all: nvim tmux alacritty scripts
+
+scripts: backup-scripts
+	rm -rf ~/.local/scripts
+	ln -s $(CWD)/scripts ~/.local/scripts
 
 alacritty: backup-alacritty
 	rm -rf ~/.config/alacritty
@@ -19,6 +23,9 @@ tmux: backup-tmux
 
 tpm:
 	git clone https://github.com/tmux-plugins/tpm ./tmux/plugins/tpm
+
+backup-scripts:
+	cp -r ~/.local/scripts ./backups/scripts-backup-$(TIMESTAMP)
 
 backup-nvim:
 	cp -r ~/.config/nvim ./backups/nvim-backup-$(TIMESTAMP)
