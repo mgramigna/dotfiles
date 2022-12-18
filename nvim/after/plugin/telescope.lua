@@ -18,7 +18,7 @@ require("telescope").setup({
 	},
 })
 
-vim.keymap.set("n", "<C-t>", ":lua require'telescope.builtin'.find_files({ hidden = true })<cr>")
+vim.keymap.set("n", "<C-t>", ":lua require'telescope.builtin'.find_files()<cr>")
 vim.keymap.set("n", "<C-s>", ":lua require'telescope.builtin'.live_grep()<cr>")
 vim.keymap.set("n", "<C-b>", ":lua require'telescope.builtin'.buffers()<cr>")
 vim.keymap.set("n", "<leader>t", ":lua require'telescope.builtin'.treesitter()<cr>")

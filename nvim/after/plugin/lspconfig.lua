@@ -30,6 +30,7 @@ local on_attach = function(client, bufnr)
 
 	client.server_capabilities.documentFormatting = false
 	client.server_capabilities.documentFormatting = false
+	client.server_capabilities.semanticTokensProvider = nil
 
 	buf_set_keymap("n", "gD", "<Cmd>lua vim.lsp.buf.declaration()<CR>", noremap_silent_opts)
 	buf_set_keymap("n", "gd", "<Cmd>lua vim.lsp.buf.definition()<CR>", noremap_silent_opts)
