@@ -105,6 +105,7 @@ return packer.startup(function(use)
 	})
 
 	-- Files
+	use("nvim-tree/nvim-tree.lua")
 	use({ "nvim-telescope/telescope-fzf-native.nvim", run = "make" })
 
 	use({
