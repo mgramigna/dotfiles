@@ -1,11 +1,25 @@
 local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
 
+vim.filetype.add({
+	extension = {
+		fsh = "fsh",
+	},
+})
+
+parser_config.fsh = {
+	install_info = {
+		url = "https://github.com/mgramigna/tree-sitter-fsh",
+		files = { "src/parser.c" },
+		branch = "main",
+	},
+	filetype = "fsh",
+}
+
 parser_config.cql = {
 	install_info = {
-		url = "~/Projects/tree-sitter-cql",
+		url = "https://github.com/mgramigna/tree-sitter-cql",
 		files = { "src/parser.c" },
-		generate_requires_npm = false,
-		requires_generate_from_grammar = false,
+		branch = "main",
 	},
 	filetype = "cqlang",
 }
