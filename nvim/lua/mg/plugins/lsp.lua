@@ -1,5 +1,6 @@
 return {
 	"neovim/nvim-lspconfig",
+	event = "BufReadPre",
 	dependencies = {
 		{
 			"j-hui/fidget.nvim",

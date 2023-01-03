@@ -1,7 +1,7 @@
 return {
-	"tpope/vim-fugitive",
 	{
 		"lewis6991/gitsigns.nvim",
+		event = "BufReadPre",
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 		},
@@ -16,7 +16,6 @@ return {
 						vim.keymap.set(mode, l, r, opts)
 					end
 
-					-- Navigation
 					map("n", "]c", function()
 						if vim.wo.diff then
 							return "]c"
@@ -59,6 +58,7 @@ return {
 
 	{
 		"sindrets/diffview.nvim",
+		event = "BufReadPre",
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 		},

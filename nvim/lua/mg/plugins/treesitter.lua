@@ -4,13 +4,23 @@ return {
 		cmd = "TSPlaygroundToggle",
 	},
 	{
+		"nvim-treesitter/nvim-treesitter-context",
+		event = "BufReadPre",
+	},
+	{
+		"windwp/nvim-ts-autotag",
+		event = "BufReadPre",
+	},
+	{
+		"p00f/nvim-ts-rainbow",
+		event = "BufReadPre",
+	},
+	{
+		"JoosepAlviste/nvim-ts-context-commentstring",
+		event = "BufReadPre",
+	},
+	{
 		"nvim-treesitter/nvim-treesitter",
-		dependencies = {
-			"p00f/nvim-ts-rainbow",
-			"nvim-treesitter/nvim-treesitter-context",
-			"windwp/nvim-ts-autotag",
-			"JoosepAlviste/nvim-ts-context-commentstring",
-		},
 		config = function()
 			local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
 

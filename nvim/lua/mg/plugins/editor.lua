@@ -1,8 +1,15 @@
 return {
-	"tpope/vim-commentary",
-	"tpope/vim-surround",
+	{
+		"tpope/vim-commentary",
+		event = "BufReadPre",
+	},
+	{
+		"tpope/vim-surround",
+		event = "BufReadPre",
+	},
 	{
 		"ggandor/leap.nvim",
+		event = "BufReadPre",
 		config = function()
 			require("leap").set_default_keymaps()
 		end,
