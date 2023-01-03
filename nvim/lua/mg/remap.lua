@@ -18,11 +18,3 @@ vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]])
 
 -- Search and replace under cursor
 vim.keymap.set("n", "<leader>sr", [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]])
-
--- Update Plugins
-vim.keymap.set("n", "<leader>ps", function()
-	local plugin_file_path = vim.fn.stdpath("config") .. "/lua/mg/plugins.lua"
-	vim.cmd("source " .. plugin_file_path)
-
-	vim.cmd("PackerSync")
-end)
