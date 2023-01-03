@@ -8,15 +8,14 @@ return {
 		end,
 	},
 	{
-		"nvim-tree/nvim-tree.lua",
+		"nvim-neo-tree/neo-tree.nvim",
+		event = "VeryLazy",
+		branch = "v2.x",
+		dependencies = {
+			"MunifTanjim/nui.nvim",
+		},
 		config = function()
-			require("nvim-tree").setup({
-				trash = {
-					cmd = "trash",
-				},
-			})
-
-			vim.keymap.set("n", "<c-n>", vim.cmd.NvimTreeToggle)
+			vim.keymap.set("n", "<c-n>", vim.cmd.NeoTreeShowToggle)
 		end,
 	},
 	{
