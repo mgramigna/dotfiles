@@ -1,3 +1,2 @@
-backups
-nvim/plugin
+backups/*-backup-*
 tmux/plugins

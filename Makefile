@@ -25,16 +25,16 @@ tpm:
 	git clone https://github.com/tmux-plugins/tpm ./tmux/plugins/tpm
 
 backup-scripts:
-	cp -r ~/.local/scripts ./backups/scripts-backup-$(TIMESTAMP)
+	-cp -r ~/.local/scripts ./backups/scripts-backup-$(TIMESTAMP)
 
 backup-nvim:
-	cp -r ~/.config/nvim ./backups/nvim-backup-$(TIMESTAMP)
+	-cp -r ~/.config/nvim ./backups/nvim-backup-$(TIMESTAMP)
 
 backup-tmux:
-	cp -r ~/.config/tmux ./backups/tmux-backup-$(TIMESTAMP)
+	-cp -r ~/.config/tmux ./backups/tmux-backup-$(TIMESTAMP)
 
 backup-alacritty:
-	cp -r ~/.config/alacritty ./backups/alacritty-backup-$(TIMESTAMP)
+	-cp -r ~/.config/alacritty ./backups/alacritty-backup-$(TIMESTAMP)
 
 clean:
-	rm -rf backups/*
+	-rm -rf backups/*-backup-*
