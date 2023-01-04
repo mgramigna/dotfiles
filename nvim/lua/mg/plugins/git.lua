@@ -58,14 +58,12 @@ return {
 
 	{
 		"sindrets/diffview.nvim",
-		event = "BufReadPre",
+		cmd = "DiffviewOpen",
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 		},
 		config = function()
 			require("diffview").setup()
-
-			vim.keymap.set("n", "<leader>df", ":DiffviewOpen<CR>")
 		end,
 	},
 }
