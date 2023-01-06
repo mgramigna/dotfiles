@@ -1,13 +1,14 @@
 return {
 	{
 		"williamboman/mason.nvim",
+		event = "VeryLazy",
 		config = function()
 			require("mason").setup()
 		end,
 	},
 	{
 		"neovim/nvim-lspconfig",
-		event = "BufReadPre",
+		event = "VeryLazy",
 		dependencies = {
 			{
 				"j-hui/fidget.nvim",
