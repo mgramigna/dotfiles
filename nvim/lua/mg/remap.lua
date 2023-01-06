@@ -1,9 +1,3 @@
--- Easy window switching
-vim.keymap.set("n", "<C-k>", ":wincmd k<cr>")
-vim.keymap.set("n", "<C-j>", ":wincmd j<cr>")
-vim.keymap.set("n", "<C-h>", ":wincmd h<cr>")
-vim.keymap.set("n", "<C-l>", ":wincmd l<cr>")
-
 -- Replace text in visual selection without overwriting paste register (clutch)
 vim.keymap.set("v", "<leader>p", '"_dP')
 

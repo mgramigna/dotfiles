@@ -14,4 +14,7 @@ return {
 			require("leap").set_default_keymaps()
 		end,
 	},
+	{
+		"christoomey/vim-tmux-navigator",
+	},
 }
