@@ -1,25 +1,26 @@
 return {
 	{
 		"williamboman/mason.nvim",
-		event = "VeryLazy",
+		cmd = "Mason",
 		config = function()
 			require("mason").setup()
 		end,
 	},
 	{
+		"glepnir/lspsaga.nvim",
+		event = "BufRead",
+		config = function()
+			require("lspsaga").setup({})
+		end,
+	},
+	{
 		"neovim/nvim-lspconfig",
-		event = "VeryLazy",
+		event = "BufReadPre",
 		dependencies = {
 			{
 				"j-hui/fidget.nvim",
 				config = function()
 					require("fidget").setup()
-				end,
-			},
-			{
-				"glepnir/lspsaga.nvim",
-				config = function()
-					require("lspsaga").init_lsp_saga()
 				end,
 			},
 			{

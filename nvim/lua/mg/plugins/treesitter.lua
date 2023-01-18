@@ -4,10 +4,6 @@ return {
 		cmd = "TSPlaygroundToggle",
 	},
 	{
-		"nvim-treesitter/nvim-treesitter-context",
-		event = "BufReadPre",
-	},
-	{
 		"windwp/nvim-ts-autotag",
 		event = "BufReadPre",
 	},
@@ -23,15 +19,6 @@ return {
 		"nvim-treesitter/nvim-treesitter",
 		config = function()
 			local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
-
-			parser_config.fsh = {
-				install_info = {
-					url = "https://github.com/mgramigna/tree-sitter-fsh",
-					files = { "src/parser.c" },
-					branch = "main",
-				},
-				filetype = "fsh",
-			}
 
 			parser_config.cql = {
 				install_info = {
@@ -53,6 +40,8 @@ return {
 					"query",
 					"prisma",
 					"rust",
+					"comment",
+					"markdown",
 				},
 				highlight = { enable = true, disable = {} },
 				indent = { enable = false, disable = {} },

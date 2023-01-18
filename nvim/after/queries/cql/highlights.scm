@@ -154,3 +154,5 @@
 ">"
 ">="
 ] @operator
+
+(comment) @comment
