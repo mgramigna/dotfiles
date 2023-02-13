@@ -11,6 +11,8 @@ return {
 		event = "BufRead",
 		config = function()
 			require("lspsaga").setup({})
+
+			vim.keymap.set({ "n", "t" }, "<leader>lt", "<cmd>Lspsaga term_toggle<CR>")
 		end,
 	},
 	{
@@ -35,7 +37,7 @@ return {
 							"pyright",
 							"rust_analyzer",
 							"solargraph",
-							"sumneko_lua",
+							"lua_ls",
 							"tailwindcss",
 							"texlab",
 							"tsserver",
@@ -80,8 +82,8 @@ return {
 					})
 				end,
 
-				["sumneko_lua"] = function()
-					lspconfig["sumneko_lua"].setup({
+				["lua_ls"] = function()
+					lspconfig["lua_ls"].setup({
 						on_attach = on_attach,
 						capabilities = capabilities,
 						settings = {

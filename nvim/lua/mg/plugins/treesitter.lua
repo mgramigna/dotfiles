@@ -42,6 +42,7 @@ return {
 					"rust",
 					"comment",
 					"markdown",
+					"markdown_inline",
 				},
 				highlight = { enable = true, disable = {} },
 				indent = { enable = false, disable = {} },
