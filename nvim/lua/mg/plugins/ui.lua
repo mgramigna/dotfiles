@@ -9,13 +9,13 @@ return {
 	},
 	{
 		"nvim-neo-tree/neo-tree.nvim",
-		event = "VeryLazy",
 		branch = "v2.x",
 		dependencies = {
 			"MunifTanjim/nui.nvim",
 		},
+		keys = { "<C-n>" },
 		config = function()
-			vim.keymap.set("n", "<c-n>", vim.cmd.NeoTreeShowToggle)
+			vim.keymap.set("n", "<C-n>", vim.cmd.NeoTreeShowToggle)
 		end,
 	},
 	{
