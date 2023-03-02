@@ -49,27 +49,24 @@ return {
 		config = function()
 			local lspconfig = require("lspconfig")
 			local on_attach = function(client, bufnr)
-				local function buf_set_keymap(...)
-					vim.api.nvim_buf_set_keymap(bufnr, ...)
-				end
-
-				local noremap_silent_opts = { noremap = true, silent = true }
+				local opts = { noremap = true, silent = true, buffer = bufnr }
 
 				client.server_capabilities.documentFormatting = false
 				client.server_capabilities.documentFormatting = false
 
-				buf_set_keymap("n", "gD", "<Cmd>lua vim.lsp.buf.declaration()<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "gd", "<Cmd>lua vim.lsp.buf.definition()<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "K", "<cmd>Lspsaga hover_doc<CR>", noremap_silent_opts)
-				buf_set_keymap("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", { silent = true })
+				vim.keymap.set("n", "gD", "<Cmd>lua vim.lsp.buf.declaration()<CR>", opts)
+				vim.keymap.set("n", "gd", "<Cmd>lua vim.lsp.buf.definition()<CR>", opts)
+				vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
+				vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
+				vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
+				vim.keymap.set("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", opts)
+				vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
+				vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
+				vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
+				vim.keymap.set("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", opts)
+				vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
+				vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
+				vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
 			end
 
 			local capabilities = require("cmp_nvim_lsp").default_capabilities()
