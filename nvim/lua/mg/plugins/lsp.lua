@@ -45,6 +45,12 @@ return {
 					})
 				end,
 			},
+			{
+				"folke/neodev.nvim",
+				config = function()
+					require("neodev").setup({})
+				end,
+			},
 		},
 		config = function()
 			local lspconfig = require("lspconfig")
@@ -85,17 +91,8 @@ return {
 						capabilities = capabilities,
 						settings = {
 							Lua = {
-								runtime = {
-									version = "LuaJIT",
-								},
-								diagnostics = {
-									globals = { "vim" },
-								},
-								workspace = {
-									library = {
-										[vim.fn.expand("$VIMRUNTIME/lua")] = true,
-										[vim.fn.expand("$VIMRUNTIME/lua/vim/lsp")] = true,
-									},
+								completion = {
+									callSnippet = "Replace",
 								},
 							},
 						},
