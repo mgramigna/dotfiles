@@ -1,0 +1,13 @@
+{
+  "name": "cql-snippets",
+  "contributes": {
+    "snippets": [
+      {
+        "language": [
+          "cqlang"
+        ],
+        "path": "./cql.json"
+      }
+    ]
+  }
+}

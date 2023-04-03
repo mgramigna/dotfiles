@@ -1,2 +1,4 @@
 backups/*-backup-*
 tmux/plugins
+scripts/on-demand-translation
+scripts/addVs.js

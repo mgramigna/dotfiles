@@ -1,0 +1,83 @@
+{
+  "CQL FHIR eCQM": {
+    "prefix": ["ecqm"],
+    "body": [
+      "library $1 version '$2'",
+      "",
+      "using FHIR version '4.0.1'",
+      "",
+      "include FHIRHelpers version '4.1.000' called FHIRHelpers",
+      "include FHIRCommon version '1.1.000' called FHIRCommon",
+      "",
+      "parameter \"Measurement Period\" Interval<DateTime>",
+      "",
+      "context Patient",
+      "",
+      "$3"
+    ],
+    "description": "Define a FHIR-based eCQM"
+  },
+  "CQL QICore eCQM": {
+    "prefix": ["qecqm"],
+    "body": [
+      "library $1 version '$2'",
+      "",
+      "using QICore version '4.1.1'",
+      "",
+      "include QICoreCommon version '1.2.000' called QICoreCommon",
+      "include FHIRHelpers version '4.1.000' called FHIRHelpers",
+      "",
+      "parameter \"Measurement Period\" Interval<DateTime>",
+      "",
+      "context Patient",
+      "",
+      "$3"
+    ],
+    "description": "Define a FHIR-based eCQM"
+  },
+  "CQL Library Definition": {
+    "prefix": ["lib"],
+    "body": ["library $1"],
+    "description": "Define a CQL library"
+  },
+  "CQL Library Definition with Version": {
+    "prefix": ["libv"],
+    "body": ["library $1 version '$2'"],
+    "description": "Define a CQL library with version"
+  },
+  "CQL Using FHIR Definition": {
+    "prefix": ["usf"],
+    "body": ["using FHIR version '$1'"],
+    "description": "Use FHIR"
+  },
+  "CQL Using QICore Definition": {
+    "prefix": ["usq"],
+    "body": ["using QICore version '$1'"],
+    "description": "Use QICore"
+  },
+  "CQL Context Patient": {
+    "prefix": ["cp"],
+    "body": ["context Patient"],
+    "description": "Define context patient"
+  },
+  "CQL Measurement Period": {
+    "prefix": ["mp"],
+    "body": ["parameter \"Measurement Period\" Interval<DateTime>"],
+    "description": "Define measurement period parameter"
+  },
+  "CQL Definition": {
+    "prefix": ["def"],
+    "body": ["define \"$1\":", "\t$2"],
+    "description": "Create an expression def"
+  },
+  "CQL Function Definition": {
+    "prefix": ["fn", "fun"],
+    "body": ["define function $1($2):", "\t$3"],
+    "description": "Create a function def"
+  },
+  "CQL Query": {
+    "prefix": ["que"],
+    "body": ["[$1: \"$2\"] $3 where $4"],
+    "description": "Create a CQL Query expression"
+  }
+}
