@@ -104,11 +104,7 @@ return {
 			if not configs.cql_ls then
 				configs.cql_ls = {
 					default_config = {
-						cmd = {
-							"java",
-							"-jar",
-							"/Users/mgramigna/Projects/sandboxes/cql-language-server/cql-ls/target/cql-ls-1.5.6-shaded.jar",
-						},
+						cmd = { "cql-language-server" },
 						filetypes = { "cqlang" },
 						root_dir = function(fname)
 							return lspconfig.util.find_git_ancestor(fname)
