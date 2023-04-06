@@ -20,6 +20,9 @@ return {
 		event = "BufReadPre",
 		dependencies = {
 			{
+				"simrat39/rust-tools.nvim",
+			},
+			{
 				"j-hui/fidget.nvim",
 				config = function()
 					require("fidget").setup()
@@ -54,40 +57,48 @@ return {
 		},
 		config = function()
 			local lspconfig = require("lspconfig")
-			local on_attach = function(client, bufnr)
-				local opts = { noremap = true, silent = true, buffer = bufnr }
+			vim.api.nvim_create_autocmd("LspAttach", {
+				group = vim.api.nvim_create_augroup("MgLspConfig", {}),
+				callback = function(ev)
+					local opts = { noremap = true, silent = true, buffer = ev.buf }
 
-				client.server_capabilities.documentFormatting = false
-				client.server_capabilities.documentFormatting = false
-
-				vim.keymap.set("n", "gD", "<Cmd>lua vim.lsp.buf.declaration()<CR>", opts)
-				vim.keymap.set("n", "gd", "<Cmd>lua vim.lsp.buf.definition()<CR>", opts)
-				vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
-				vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
-				vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
-				vim.keymap.set("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", opts)
-				vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
-				vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
-				vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
-				vim.keymap.set("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", opts)
-				vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
-				vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
-				vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
-			end
+					vim.keymap.set("n", "gD", "<cmd>lua vim.lsp.buf.declaration()<CR>", opts)
+					vim.keymap.set("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
+					vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
+					vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
+					vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
+					vim.keymap.set("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", opts)
+					vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
+					vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
+					vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
+					vim.keymap.set("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", opts)
+					vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
+					vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
+					vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
+				end,
+			})
 
 			local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
 			require("mason-lspconfig").setup_handlers({
 				function(server_name)
 					lspconfig[server_name].setup({
-						on_attach = on_attach,
 						capabilities = capabilities,
+					})
+				end,
+
+				["rust_analyzer"] = function()
+					require("rust-tools").setup({
+						tools = {
+							inlay_hints = {
+								auto = true,
+							},
+						},
 					})
 				end,
 
 				["lua_ls"] = function()
 					lspconfig["lua_ls"].setup({
-						on_attach = on_attach,
 						capabilities = capabilities,
 						settings = {
 							Lua = {
