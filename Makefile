@@ -1,9 +1,9 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux scripts
+.PHONY: alacritty nvim tmux scripts starship
 
-all: nvim tmux alacritty scripts
+all: nvim tmux alacritty scripts starship
 
 scripts: backup-scripts
 	rm -rf ~/.local/scripts
@@ -17,6 +17,10 @@ nvim: backup-nvim
 	rm -rf ~/.config/nvim
 	ln -s $(CWD)/nvim ~/.config/nvim
 
+starship:
+	rm -rf ~/.config/starship
+	ln -s $(CWD)/starship ~/.config/starship
+
 tmux: backup-tmux
 	rm -rf ~/.config/tmux
 	ln -s $(CWD)/tmux ~/.config/tmux
@@ -29,6 +33,9 @@ backup-scripts:
 
 backup-nvim:
 	-cp -r ~/.config/nvim ./backups/nvim-backup-$(TIMESTAMP)
+
+backup-starship:
+	-cp -r ~/.config/starship ./backups/starship-backup-$(TIMESTAMP)
 
 backup-tmux:
 	-cp -r ~/.config/tmux ./backups/tmux-backup-$(TIMESTAMP)
