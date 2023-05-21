@@ -10,7 +10,12 @@ return {
 		"glepnir/lspsaga.nvim",
 		event = "BufRead",
 		config = function()
-			require("lspsaga").setup({})
+			require("lspsaga").setup({
+				diagnostic = {
+					jump_num_shortcut = false,
+					show_code_action = false,
+				},
+			})
 
 			vim.keymap.set({ "n", "t" }, "<leader>lt", "<cmd>Lspsaga term_toggle<CR>")
 		end,

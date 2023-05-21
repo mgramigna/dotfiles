@@ -25,4 +25,4 @@ format = "[$user]($style) on "
 style_user = "bold #8be9fd"
 
 [ruby]
-detect_variables = []
+disabled = true
