@@ -16,3 +16,4 @@ yabai -m rule --add app="^Messages$" manage=off
 yabai -m rule --add app="^Signal$" manage=off
 yabai -m rule --add app="^Finder$" manage=off
 yabai -m rule --add app="^Zscaler" manage=off
+yabai -m rule --add app="^Installer$" manage=off

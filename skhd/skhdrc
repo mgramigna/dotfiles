@@ -30,3 +30,6 @@ shift + alt - 5 : yabai -m window --space 5
 
 ctrl + alt - q : yabai --stop-service
 ctrl + alt - s : yabai --start-service
+
+cmd - i : yabai -m config top_padding 24; yabai -m config bottom_padding 0; yabai -m config left_padding 0 yabai -m config right_padding 0; yabai -m config window_gap 0;
+cmd + alt - i: yabai -m config top_padding 36; yabai -m config bottom_padding 12; yabai -m config left_padding 12; yabai -m config right_padding 12; yabai -m config window_gap 12;
