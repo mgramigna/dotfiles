@@ -1,0 +1,37 @@
+PLUGIN_DIR="$HOME/.config/sketchybar/plugins"
+ITEM_DIR="$HOME/.config/sketchybar/items"
+
+export FONT="JetBrainsMono Nerd Font"
+export NERD_FONT="JetBrainsMono Nerd Font"
+
+sketchybar --bar height=24        \
+                 blur_radius=100  \
+                 position=top     \
+                 padding_left=10  \
+                 padding_right=10 \
+                 color=0xff44475a \
+                 shadow=on
+
+sketchybar --default updates=when_shown                       \
+                     drawing=on                               \
+                     icon.font="$NERD_FONT:Regular:12.0"      \
+                     icon.color=0xffffffff                    \
+                     label.font="$FONT:Light:12.0"            \
+                     label.color=0xffffffff                   \
+                     label.padding_left=4                     \
+                     label.padding_right=4                    \
+                     icon.padding_left=4                      \
+                     icon.padding_right=4
+
+source $ITEM_DIR/battery.sh
+source $ITEM_DIR/clock.sh
+source $ITEM_DIR/spaces.sh
+source $ITEM_DIR/window_title.sh
+source $ITEM_DIR/yabai.sh
+source $ITEM_DIR/cpu.sh
+source $ITEM_DIR/wifi.sh
+source $ITEM_DIR/media.sh
+
+sketchybar --update
+
+echo "sketchybar configuration loaded.."

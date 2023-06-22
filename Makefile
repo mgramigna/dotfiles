@@ -1,9 +1,9 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux scripts starship
+.PHONY: alacritty nvim tmux scripts starship yabai skhd sketchybar
 
-all: nvim tmux alacritty scripts starship
+all: nvim tmux alacritty scripts starship yabai skhd sketchybar
 
 scripts: backup-scripts
 	rm -rf ~/.local/scripts
@@ -25,6 +25,18 @@ tmux: backup-tmux
 	rm -rf ~/.config/tmux
 	ln -s $(CWD)/tmux ~/.config/tmux
 
+yabai: backup-yabai
+	rm -rf ~/.config/yabai
+	ln -s $(CWD)/yabai ~/.config/yabai
+
+skhd: backup-skhd
+	rm -rf ~/.config/skhd
+	ln -s $(CWD)/skhd ~/.config/skhd
+
+sketchybar: backup-sketchybar
+	rm -rf ~/.config/sketchybar
+	ln -s $(CWD)/sketchybar ~/.config/sketchybar
+
 tpm:
 	git clone https://github.com/tmux-plugins/tpm ./tmux/plugins/tpm
 
@@ -42,6 +54,15 @@ backup-tmux:
 
 backup-alacritty:
 	-cp -r ~/.config/alacritty ./backups/alacritty-backup-$(TIMESTAMP)
+
+backup-yabai:
+	-cp -r ~/.config/yabai ./backups/yabai-backup-$(TIMESTAMP)
+
+backup-skhd:
+	-cp -r ~/.config/skhd ./backups/skhd-backup-$(TIMESTAMP)
+
+backup-sketchybar:
+	-cp -r ~/.config/sketchybar ./backups/sketchybar-backup-$(TIMESTAMP)
 
 clean:
 	-rm -rf backups/*-backup-*
