@@ -1,9 +1,9 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux scripts starship yabai skhd sketchybar
+.PHONY: alacritty nvim tmux scripts starship yabai skhd sketchybar karabiner
 
-all: nvim tmux alacritty scripts starship yabai skhd sketchybar
+all: nvim tmux alacritty scripts starship yabai skhd sketchybar karabiner
 
 scripts: backup-scripts
 	rm -rf ~/.local/scripts
@@ -37,6 +37,10 @@ sketchybar: backup-sketchybar
 	rm -rf ~/.config/sketchybar
 	ln -s $(CWD)/sketchybar ~/.config/sketchybar
 
+karabiner: backup-karabiner
+	rm -rf ~/.config/karabiner
+	ln -s $(CWD)/karabiner ~/.config/karabiner
+
 tpm:
 	git clone https://github.com/tmux-plugins/tpm ./tmux/plugins/tpm
 
@@ -63,6 +67,9 @@ backup-skhd:
 
 backup-sketchybar:
 	-cp -r ~/.config/sketchybar ./backups/sketchybar-backup-$(TIMESTAMP)
+
+backup-karabiner:
+	-cp -r ~/.config/karabiner ./backups/karabiner-backup-$(TIMESTAMP)
 
 clean:
 	-rm -rf backups/*-backup-*
