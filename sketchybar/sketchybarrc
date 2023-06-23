@@ -23,15 +23,12 @@ sketchybar --default updates=when_shown                       \
                      icon.padding_left=4                      \
                      icon.padding_right=4
 
-source $ITEM_DIR/battery.sh
 source $ITEM_DIR/clock.sh
+source $ITEM_DIR/battery.sh
 source $ITEM_DIR/spaces.sh
 source $ITEM_DIR/window_title.sh
 source $ITEM_DIR/yabai.sh
-source $ITEM_DIR/cpu.sh
 source $ITEM_DIR/wifi.sh
 source $ITEM_DIR/media.sh
-
-sketchybar --update
 
 echo "sketchybar configuration loaded.."
