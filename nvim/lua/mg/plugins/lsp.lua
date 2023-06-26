@@ -28,6 +28,11 @@ return {
 				"simrat39/rust-tools.nvim",
 			},
 			{
+				"pmizio/typescript-tools.nvim",
+				dependencies = { "nvim-lua/plenary.nvim" },
+				opts = {},
+			},
+			{
 				"j-hui/fidget.nvim",
 				tag = "legacy",
 				config = function()
@@ -49,7 +54,7 @@ return {
 							"lua_ls",
 							"tailwindcss",
 							"texlab",
-							"tsserver",
+							-- "tsserver",
 						},
 					})
 				end,
@@ -132,7 +137,6 @@ return {
 			end
 
 			lspconfig.cql_ls.setup({
-				on_attach = on_attach,
 				capabilities = capabilities,
 			})
 		end,
