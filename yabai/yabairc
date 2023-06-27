@@ -17,3 +17,5 @@ yabai -m rule --add app="^Signal$" manage=off
 yabai -m rule --add app="^Finder$" manage=off
 yabai -m rule --add app="^Zscaler" manage=off
 yabai -m rule --add app="^Installer$" manage=off
+yabai -m rule --add app="^System Settings$" manage=off
+yabai -m rule --add app="^Microsoft Teams$" manage=off

@@ -3,14 +3,50 @@ ITEM_DIR="$HOME/.config/sketchybar/items"
 
 export FONT="JetBrainsMono Nerd Font"
 export NERD_FONT="JetBrainsMono Nerd Font"
+PADDINGS=3
 
-sketchybar --bar height=24        \
-                 blur_radius=100  \
-                 position=top     \
-                 padding_left=10  \
-                 padding_right=10 \
-                 color=0xff44475a \
-                 shadow=on
+bar=(
+  height=24
+  color=0xff44475a
+  shadow=on
+  position=top
+  sticky=on
+  padding_right=10
+  padding_left=10
+  corner_radius=9
+  y_offset=6
+  margin=12
+  blur_radius=20
+  notch_width=0
+)
+
+sketchybar --bar "${bar[@]}"
+
+# Setting up default values
+defaults=(
+  updates=when_shown
+  icon.font="$FONT:Bold:14.0"
+  icon.color=$ICON_COLOR
+  icon.padding_left=$PADDINGS
+  icon.padding_right=$PADDINGS
+  label.font="$FONT:Semibold:13.0"
+  label.color=$LABEL_COLOR
+  label.padding_left=$PADDINGS
+  label.padding_right=$PADDINGS
+  padding_right=$PADDINGS
+  padding_left=$PADDINGS
+  background.height=30
+  background.corner_radius=9
+  popup.background.border_width=2
+  popup.background.corner_radius=9
+  popup.background.border_color=$POPUP_BORDER_COLOR
+  popup.background.color=$POPUP_BACKGROUND_COLOR
+  popup.blur_radius=20
+  popup.background.shadow.drawing=on
+)
+
+sketchybar --default "${defaults[@]}"
+
 
 sketchybar --default updates=when_shown                       \
                      drawing=on                               \
@@ -29,6 +65,6 @@ source $ITEM_DIR/spaces.sh
 source $ITEM_DIR/window_title.sh
 source $ITEM_DIR/yabai.sh
 source $ITEM_DIR/wifi.sh
-source $ITEM_DIR/media.sh
+source $ITEM_DIR/spotify.sh
 
 echo "sketchybar configuration loaded.."
