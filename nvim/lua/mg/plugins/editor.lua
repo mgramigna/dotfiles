@@ -17,4 +17,9 @@ return {
 	{
 		"christoomey/vim-tmux-navigator",
 	},
+	{
+		"folke/flash.nvim",
+		event = "VeryLazy",
+		opts = {},
+	},
 }
