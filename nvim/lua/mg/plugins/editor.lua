@@ -8,18 +8,37 @@ return {
 		event = "BufReadPre",
 	},
 	{
-		"ggandor/leap.nvim",
-		event = "BufReadPre",
-		config = function()
-			require("leap").set_default_keymaps()
-		end,
-	},
-	{
 		"christoomey/vim-tmux-navigator",
 	},
 	{
 		"folke/flash.nvim",
 		event = "VeryLazy",
 		opts = {},
+		keys = {
+			{
+				"s",
+				mode = { "n", "x", "o" },
+				function()
+					require("flash").jump()
+				end,
+				desc = "Flash",
+			},
+			{
+				"S",
+				mode = { "n", "o", "x" },
+				function()
+					require("flash").treesitter()
+				end,
+				desc = "Flash Treesitter",
+			},
+			{
+				"R",
+				mode = { "o", "x" },
+				function()
+					require("flash").treesitter_search()
+				end,
+				desc = "Flash Treesitter Search",
+			},
+		},
 	},
 }
