@@ -8,7 +8,7 @@ return {
 	},
 	{
 		"glepnir/lspsaga.nvim",
-		event = "BufRead",
+		event = "LspAttach",
 		config = function()
 			require("lspsaga").setup({
 				diagnostic = {
@@ -22,7 +22,7 @@ return {
 	},
 	{
 		"neovim/nvim-lspconfig",
-		event = "BufReadPre",
+		event = "BufRead",
 		dependencies = {
 			{
 				"simrat39/rust-tools.nvim",
@@ -50,11 +50,9 @@ return {
 							"prismals",
 							"pyright",
 							"rust_analyzer",
-							"solargraph",
 							"lua_ls",
 							"tailwindcss",
 							"texlab",
-							-- "tsserver",
 						},
 					})
 				end,
@@ -78,7 +76,7 @@ return {
 					vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
 					vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
 					vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
-					vim.keymap.set("n", "gr", "<cmd>Lspsaga lsp_finder<CR>", opts)
+					vim.keymap.set("n", "gr", "<cmd>Lspsaga finder<CR>", opts)
 					vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
 					vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
 					vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
