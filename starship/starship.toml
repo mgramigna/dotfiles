@@ -9,7 +9,7 @@ success_symbol = "[λ](bold #50fa7b)"
 style = "bold #f1fa8c"
 
 [directory]
-style = "bold #50fa7b"
+style = "bold #8be9fd"
 
 [git_branch]
 style = "bold #ff79c6"
@@ -25,4 +25,7 @@ format = "[$user]($style) on "
 style_user = "bold #8be9fd"
 
 [ruby]
+disabled = true
+
+[docker_context]
 disabled = true

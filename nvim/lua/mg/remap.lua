@@ -12,3 +12,6 @@ vim.keymap.set({ "n", "v" }, "<leader>d", [["_d]])
 
 -- Search and replace under cursor
 vim.keymap.set("n", "<leader>sr", [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]])
+
+-- Print full file path
+vim.keymap.set("n", "<leader>fp", "<cmd>lua print(vim.fn.expand('%'))<cr>")
