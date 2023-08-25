@@ -30,7 +30,24 @@ return {
 			{
 				"pmizio/typescript-tools.nvim",
 				dependencies = { "nvim-lua/plenary.nvim" },
-				opts = {},
+				config = function()
+					local api = require("typescript-tools.api")
+					require("typescript-tools").setup({
+						handlers = {
+							-- Ignore "X is defined but never read" (handled by eslint)
+							["textDocument/publishDiagnostics"] = api.filter_diagnostics({ 6133 }),
+						},
+						settings = {
+							separate_diagnostic_server = true,
+							publish_diagnostic_on = "insert_leave",
+							tsserver_max_memory = "auto",
+						},
+					})
+
+					vim.keymap.set("n", "<leader>ai", "<cmd>TSToolsAddMissingImports<cr>", { noremap = true })
+					vim.keymap.set("n", "<leader>ri", "<cmd>TSToolsRemoveUnusedImports<cr>", { noremap = true })
+					vim.keymap.set("n", "<leader>sd", "<cmd>TSToolsGoToSourceDefinition<cr>", { noremap = true })
+				end,
 			},
 			{
 				"j-hui/fidget.nvim",

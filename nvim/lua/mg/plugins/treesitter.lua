@@ -8,16 +8,11 @@ return {
 		event = "BufReadPre",
 	},
 	{
-		"p00f/nvim-ts-rainbow",
-		event = "BufReadPre",
-	},
-	{
 		"JoosepAlviste/nvim-ts-context-commentstring",
 		event = "BufReadPre",
 	},
 	{
 		"nvim-treesitter/nvim-treesitter",
-		commit = "62e29fc03ef4f772bfad59e342600c6214bdfc57",
 		config = function()
 			local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
 
