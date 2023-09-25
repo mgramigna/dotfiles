@@ -21,6 +21,11 @@ return {
 		end,
 	},
 	{
+		"folke/trouble.nvim",
+		dependencies = { "nvim-tree/nvim-web-devicons" },
+		opts = {},
+	},
+	{
 		"neovim/nvim-lspconfig",
 		event = "BufRead",
 		dependencies = {
@@ -41,6 +46,7 @@ return {
 							separate_diagnostic_server = true,
 							publish_diagnostic_on = "insert_leave",
 							tsserver_max_memory = "auto",
+							expose_as_code_action = "all",
 						},
 					})
 

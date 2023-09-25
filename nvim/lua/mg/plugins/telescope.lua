@@ -2,6 +2,7 @@ local telescope_keys = {
 	find_files = "<C-t>",
 	git_files = "<C-p>",
 	live_grep = "<C-s>",
+	live_grep_dir = "<leader>sg",
 	buffers = "<C-b>",
 	treesitter = "<leader>t",
 	grep_string = "<leader>s",
@@ -72,6 +73,7 @@ return {
 				":lua require'telescope.builtin'.live_grep()<cr>",
 				{ silent = true }
 			)
+			vim.keymap.set("n", telescope_keys.live_grep_dir, ":Telescope live_grep search_dirs=")
 			vim.keymap.set(
 				"n",
 				telescope_keys.buffers,
