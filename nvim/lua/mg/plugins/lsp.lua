@@ -15,6 +15,9 @@ return {
 					jump_num_shortcut = false,
 					show_code_action = false,
 				},
+				lightbulb = {
+					enable = false,
+				},
 			})
 
 			vim.keymap.set({ "n", "t" }, "<leader>lt", "<cmd>Lspsaga term_toggle<CR>")
