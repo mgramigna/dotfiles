@@ -56,6 +56,15 @@ return {
 					vim.keymap.set("n", "<leader>ai", "<cmd>TSToolsAddMissingImports<cr>", { noremap = true })
 					vim.keymap.set("n", "<leader>ri", "<cmd>TSToolsRemoveUnusedImports<cr>", { noremap = true })
 					vim.keymap.set("n", "<leader>sd", "<cmd>TSToolsGoToSourceDefinition<cr>", { noremap = true })
+					vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
+
+					-- 					local eslint_fix_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
+
+					-- 					vim.api.nvim_create_autocmd("BufWritePost", {
+					-- 						pattern = { "*.ts", "*.tsx" },
+					-- 						command = "EslintFixAll",
+					-- 						group = eslint_fix_group,
+					-- 					})
 				end,
 			},
 			{
