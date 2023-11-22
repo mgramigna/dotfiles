@@ -17,7 +17,13 @@ font:
     family:
       JetBrainsMono Nerd Font
     style: Bold Italic
+mouse:
+  hide_when_typing: true
 window:
+  decorations: buttonless
+  padding:
+    x: 8
+    y: 8
   dimensions:
     columns: 130
     lines: 30

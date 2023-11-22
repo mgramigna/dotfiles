@@ -116,7 +116,12 @@ return {
 					vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
 					vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
 					vim.keymap.set("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", opts)
-					vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
+					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
+
+					-- Lspsaga hover_doc breaks sometimes in tsserver after hovering over something with no information
+					-- https://github.com/nvimdev/lspsaga.nvim/issues/1295
+					-- TODO: re-enable this when the above issue is resolved
+					-- vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
 					vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
 					vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
 				end,
