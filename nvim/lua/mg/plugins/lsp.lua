@@ -136,6 +136,17 @@ return {
 					})
 				end,
 
+				["eslint"] = function()
+					lspconfig.eslint.setup({
+						on_attach = function(bufnr)
+							vim.api.nvim_create_autocmd("BufWritePre", {
+								buffer = bufnr,
+								command = "EslintFixAll",
+							})
+						end,
+					})
+				end,
+
 				["rust_analyzer"] = function()
 					require("rust-tools").setup({
 						tools = {
