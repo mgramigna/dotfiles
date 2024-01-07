@@ -14,17 +14,6 @@ return {
 	{
 		"nvim-treesitter/nvim-treesitter",
 		config = function()
-			local parser_config = require("nvim-treesitter.parsers").get_parser_configs()
-
-			parser_config.cql = {
-				install_info = {
-					url = "https://github.com/mgramigna/tree-sitter-cql",
-					files = { "src/parser.c" },
-					branch = "main",
-				},
-				filetype = "cqlang",
-			}
-
 			require("nvim-treesitter.configs").setup({
 				ensure_installed = {
 					"javascript",

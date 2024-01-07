@@ -5,11 +5,6 @@ vim.api.nvim_create_autocmd(
 	{ group = local_opt_group, pattern = { "*.md" }, command = "setlocal spell" }
 )
 
-vim.api.nvim_create_autocmd(
-	{ "BufRead", "BufNewFile" },
-	{ group = local_opt_group, pattern = { "*.cql" }, command = "setlocal nospell" }
-)
-
 vim.api.nvim_create_autocmd("TermOpen", {
 	group = local_opt_group,
 	callback = function()

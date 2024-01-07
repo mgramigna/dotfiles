@@ -170,24 +170,6 @@ return {
 					})
 				end,
 			})
-
-			local configs = require("lspconfig.configs")
-			if not configs.cql_ls then
-				configs.cql_ls = {
-					default_config = {
-						cmd = { "cql-language-server" },
-						filetypes = { "cqlang" },
-						root_dir = function(fname)
-							return lspconfig.util.find_git_ancestor(fname)
-						end,
-						settings = {},
-					},
-				}
-			end
-
-			lspconfig.cql_ls.setup({
-				capabilities = capabilities,
-			})
 		end,
 	},
 }
