@@ -1,67 +1,55 @@
 return {
-	"mhartington/formatter.nvim",
-	event = "BufReadPre",
+	"stevearc/conform.nvim",
+	event = { "BufWritePre" },
+	cmd = { "ConformInfo" },
+	keys = {
+		{
+			"<leader>f",
+			function()
+				require("conform").format({ async = true, lsp_fallback = true })
+			end,
+			mode = "",
+			desc = "Format buffer",
+		},
+	},
 	config = function()
-		local util = require("formatter.util")
-		require("formatter").setup({
-			filetype = {
-				c = {
-					require("formatter.filetypes.c").clangformat,
-				},
-				lua = {
-					require("formatter.filetypes.lua").stylua,
-				},
-				javascript = {
-					require("formatter.filetypes.javascript").prettier,
-				},
-				javascriptreact = {
-					require("formatter.filetypes.javascriptreact").prettier,
-				},
-				json = {
-					require("formatter.filetypes.json").prettier,
-				},
-				markdown = {
-					require("formatter.filetypes.markdown").prettier,
-				},
-				typescript = {
-					require("formatter.filetypes.typescript").prettierd,
-				},
-				typescriptreact = {
-					require("formatter.filetypes.typescriptreact").prettierd,
-				},
-				ruby = {
-					require("formatter.filetypes.ruby").rubocop,
-				},
-				rust = {
-					require("formatter.filetypes.rust").rustfmt,
-				},
-				astro = {
-					function()
-						return {
-							exe = "prettier",
-							args = {
-								"--stdin-filepath",
-								util.escape_path(util.get_current_buffer_file_path()),
-								"--parser",
-								"astro",
-								"--plugin-search-dir=.",
-							},
-							stdin = true,
-							try_node_modules = true,
-						}
-					end,
-				},
+		require("conform").setup({
+			formatters_by_ft = {
+				lua = { "stylua" },
+				javascript = { { "prettierd", "prettier" } },
+				javascriptreact = { { "prettierd", "prettier" } },
+				typescript = { { "prettierd", "prettier" } },
+				typescriptreact = { { "prettierd", "prettier" } },
+				json = { { "prettierd", "prettier" } },
+				markdown = { { "prettierd", "prettier" } },
+				astro = { { "prettierd", "prettier" } },
+				rust = { "rustfmt" },
 			},
+			format_on_save = function(bufnr)
+				if vim.g.disable_autoformat or vim.b[bufnr].disable_autoformat then
+					return
+				end
+				return { timeout_ms = 500, lsp_fallback = true }
+			end,
 		})
 
-		local format_group = vim.api.nvim_create_augroup("Format", { clear = true })
-
-		vim.api.nvim_create_autocmd("BufWritePost", {
-			command = "FormatWrite",
-			group = format_group,
+		vim.api.nvim_create_user_command("FormatDisable", function(args)
+			if args.bang then
+				-- FormatDisable! will disable formatting just for this buffer
+				vim.b.disable_autoformat = true
+			else
+				vim.g.disable_autoformat = true
+			end
+		end, {
+			desc = "Disable autoformat-on-save",
+			bang = true,
 		})
 
-		vim.api.nvim_set_keymap("n", "<leader>f", "<cmd>Format<cr>", { noremap = true })
-		vim.api.nvim_set_keymap("n", "<leader>F", "<cmd>FormatWrite<cr>", { noremap = true })
+		vim.api.nvim_create_user_command("FormatEnable", function()
+			vim.b.disable_autoformat = false
+			vim.g.disable_autoformat = false
+		end, {
+			desc = "Re-enable autoformat-on-save",
+		})
 	end,
 }
