@@ -24,10 +24,10 @@ return {
 					require("formatter.filetypes.markdown").prettier,
 				},
 				typescript = {
-					require("formatter.filetypes.typescript").prettier,
+					require("formatter.filetypes.typescript").prettierd,
 				},
 				typescriptreact = {
-					require("formatter.filetypes.typescriptreact").prettier,
+					require("formatter.filetypes.typescriptreact").prettierd,
 				},
 				ruby = {
 					require("formatter.filetypes.ruby").rubocop,
