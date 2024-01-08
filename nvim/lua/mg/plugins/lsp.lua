@@ -117,6 +117,17 @@ return {
 					-- vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
 					vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
 					vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
+
+					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
+
+					vim.api.nvim_create_autocmd("BufWritePre", {
+						group = eslint_group,
+						callback = function()
+							if vim.fn.exists(":EslintFixAll") > 0 then
+								vim.cmd("EslintFixAll")
+							end
+						end,
+					})
 				end,
 			})
 
