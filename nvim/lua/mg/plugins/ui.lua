@@ -5,7 +5,7 @@ return {
 		event = "VeryLazy",
 		config = function()
 			require("lualine").setup({
-				options = { theme = "dracula-nvim" },
+				options = { theme = "catppuccin" },
 				sections = {
 					lualine_x = { "filetype" },
 				},

@@ -1,15 +1,27 @@
 return {
-	"Mofiqul/dracula.nvim",
-	lazy = false,
-	priority = 1000,
-	config = function()
-		local colors = require("dracula").colors()
-
-		require("dracula").setup({
-			italic_comment = true,
-		})
-
-		vim.cmd.colorscheme("dracula")
-		vim.cmd("hi SpellBad gui=undercurl guifg=none guibg=none guisp=" .. colors["cyan"])
-	end,
+	{
+		"catppuccin/nvim",
+		name = "catppuccin",
+		priority = 1000,
+		lazy = false,
+		config = function()
+			require("catppuccin").setup({
+				flavour = "macchiato",
+				integrations = {
+					cmp = true,
+					gitsigns = true,
+					treesitter = true,
+					fidget = true,
+					harpoon = true,
+					mason = true,
+					lsp_saga = true,
+					neotree = true,
+					telescope = {
+						enabled = true,
+					},
+				},
+			})
+			vim.cmd.colorscheme("catppuccin")
+		end,
+	},
 }
