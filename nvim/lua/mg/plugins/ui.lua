@@ -1,6 +1,10 @@
 return {
 	"nvim-tree/nvim-web-devicons",
 	{
+		"stevearc/dressing.nvim",
+		opts = {},
+	},
+	{
 		"nvim-lualine/lualine.nvim",
 		event = "VeryLazy",
 		config = function()

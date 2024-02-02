@@ -37,11 +37,24 @@ return {
 				"simrat39/rust-tools.nvim",
 			},
 			{
+				"marilari88/twoslash-queries.nvim",
+				config = function()
+					require("twoslash-queries").setup({
+						multi_line = true,
+					})
+
+					vim.keymap.set("n", "<leader>ti", "<cmd>TwoslashQueriesInspect<cr>", { noremap = true })
+				end,
+			},
+			{
 				"pmizio/typescript-tools.nvim",
 				dependencies = { "nvim-lua/plenary.nvim" },
 				config = function()
 					local api = require("typescript-tools.api")
 					require("typescript-tools").setup({
+						on_attach = function(client, bufnr)
+							require("twoslash-queries").attach(client, bufnr)
+						end,
 						handlers = {
 							-- Ignore "X is defined but never read" (handled by eslint)
 							["textDocument/publishDiagnostics"] = api.filter_diagnostics({ 6133 }),
@@ -62,7 +75,6 @@ return {
 			},
 			{
 				"j-hui/fidget.nvim",
-				tag = "legacy",
 				config = function()
 					require("fidget").setup()
 				end,
@@ -103,7 +115,8 @@ return {
 					vim.keymap.set("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
 					vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
 					vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
-					vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
+					vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
+					-- vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
 					vim.keymap.set("n", "gr", "<cmd>Lspsaga finder<CR>", opts)
 					vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
 					vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
