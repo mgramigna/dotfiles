@@ -1,5 +1,7 @@
 palette = "catppuccin_macchiato"
 
+command_timeout = 5000
+
 [ruby]
 disabled = true
 

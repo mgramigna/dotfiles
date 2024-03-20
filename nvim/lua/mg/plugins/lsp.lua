@@ -58,6 +58,7 @@ return {
 						handlers = {
 							-- Ignore "X is defined but never read" (handled by eslint)
 							["textDocument/publishDiagnostics"] = api.filter_diagnostics({ 6133 }),
+							["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { border = "rounded" }),
 						},
 						settings = {
 							separate_diagnostic_server = true,
@@ -106,29 +107,31 @@ return {
 		},
 		config = function()
 			local lspconfig = require("lspconfig")
+
+			local default_handlers = {
+				["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { border = "rounded" }),
+			}
+
 			vim.api.nvim_create_autocmd("LspAttach", {
 				group = vim.api.nvim_create_augroup("MgLspConfig", {}),
 				callback = function(ev)
 					local opts = { noremap = true, silent = true, buffer = ev.buf }
 
-					vim.keymap.set("n", "gD", "<cmd>lua vim.lsp.buf.declaration()<CR>", opts)
-					vim.keymap.set("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
-					vim.keymap.set("n", "gi", "<cmd>lua vim.lsp.buf.implementation()<CR>", opts)
-					vim.keymap.set("n", "gt", "<cmd>lua vim.lsp.buf.type_definition()<CR>", opts)
+					vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
+					vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+					vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
+					vim.keymap.set("n", "gt", vim.lsp.buf.type_definition, opts)
 					vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
-					-- vim.keymap.set("n", "<leader>rn", "<cmd>Lspsaga rename<CR>", opts)
-					vim.keymap.set("n", "gr", "<cmd>Lspsaga finder<CR>", opts)
-					vim.keymap.set("n", "<leader>ec", "<cmd>Lspsaga show_cursor_diagnostics<CR>", opts)
-					vim.keymap.set("n", "<leader>e", "<cmd>Lspsaga show_line_diagnostics<CR>", opts)
-					vim.keymap.set("n", "]g", "<cmd>Lspsaga diagnostic_jump_next<CR>", opts)
-					vim.keymap.set("n", "[g", "<cmd>Lspsaga diagnostic_jump_prev<CR>", opts)
-					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 
-					-- Lspsaga hover_doc breaks sometimes in tsserver after hovering over something with no information
-					-- https://github.com/nvimdev/lspsaga.nvim/issues/1295
-					-- TODO: re-enable this when the above issue is resolved
-					-- vim.keymap.set("n", "K", "<cmd>Lspsaga hover_doc<CR>", opts)
-					vim.keymap.set("n", "<leader>do", "<cmd>Lspsaga code_action<CR>", opts)
+					vim.keymap.set("n", "gr", function()
+						require("telescope.builtin").lsp_references()
+					end, opts)
+
+					vim.keymap.set("n", "<leader>e", vim.diagnostic.open_float)
+					vim.keymap.set("n", "[g", vim.diagnostic.goto_prev)
+					vim.keymap.set("n", "]g", vim.diagnostic.goto_next)
+					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
+					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 					vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
 
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
@@ -146,10 +149,17 @@ return {
 
 			local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
+			vim.diagnostic.config({
+				float = {
+					border = "rounded",
+				},
+			})
+
 			require("mason-lspconfig").setup_handlers({
 				function(server_name)
 					lspconfig[server_name].setup({
 						capabilities = capabilities,
+						handlers = default_handlers,
 					})
 				end,
 
@@ -166,6 +176,7 @@ return {
 				["lua_ls"] = function()
 					lspconfig["lua_ls"].setup({
 						capabilities = capabilities,
+						handlers = default_handlers,
 						settings = {
 							Lua = {
 								completion = {

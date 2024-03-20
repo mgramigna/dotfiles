@@ -1,3 +1,6 @@
+-- Map `jk` to escape
+vim.keymap.set("i", "jk", "<esc>")
+
 -- Replace text in visual selection without overwriting paste register (clutch)
 vim.keymap.set("v", "<leader>p", '"_dP')
 
