@@ -165,6 +165,9 @@ return {
 
 				["rust_analyzer"] = function()
 					require("rust-tools").setup({
+						server = {
+							handlers = default_handlers,
+						},
 						tools = {
 							inlay_hints = {
 								auto = true,
