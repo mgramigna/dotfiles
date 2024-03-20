@@ -8,6 +8,9 @@ return {
 			require("catppuccin").setup({
 				flavour = "macchiato",
 				integrations = {
+					indent_blankline = {
+						enabled = true,
+					},
 					cmp = true,
 					gitsigns = true,
 					treesitter = true,

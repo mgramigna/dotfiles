@@ -1,4 +1,6 @@
 return {
+	{ "lukas-reineke/indent-blankline.nvim", main = "ibl", opts = {} },
+	{ "tpope/vim-sleuth" },
 	{
 		"echasnovski/mini.pairs",
 		event = "VeryLazy",
