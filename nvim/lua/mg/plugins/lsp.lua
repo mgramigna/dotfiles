@@ -34,7 +34,9 @@ return {
 		event = "BufRead",
 		dependencies = {
 			{
-				"simrat39/rust-tools.nvim",
+				"mrcjkb/rustaceanvim",
+				version = "^4",
+				ft = { "rust" },
 			},
 			{
 				"marilari88/twoslash-queries.nvim",
@@ -88,10 +90,10 @@ return {
 							"astro",
 							"eslint",
 							"jdtls",
+							"lua_ls",
 							"prismals",
 							"pyright",
 							"rust_analyzer",
-							"lua_ls",
 							"tailwindcss",
 							"texlab",
 						},
@@ -164,16 +166,14 @@ return {
 				end,
 
 				["rust_analyzer"] = function()
-					require("rust-tools").setup({
+					vim.g.rustaceanvim = {
+						tools = {},
 						server = {
-							handlers = default_handlers,
-						},
-						tools = {
-							inlay_hints = {
-								auto = true,
+							default_settings = {
+								["rust-analyzer"] = {},
 							},
 						},
-					})
+					}
 				end,
 
 				["lua_ls"] = function()
