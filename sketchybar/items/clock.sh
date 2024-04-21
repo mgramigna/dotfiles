@@ -1,1 +1,0 @@
-sketchybar --add item clock right --set clock update_freq=5 script="$PLUGIN_DIR/clock.sh"

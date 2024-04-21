@@ -1,9 +1,9 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux scripts starship yabai skhd sketchybar karabiner
+.PHONY: alacritty nvim tmux scripts starship karabiner
 
-all: nvim tmux alacritty scripts starship yabai skhd sketchybar karabiner
+all: nvim tmux alacritty scripts starship karabiner
 
 scripts: backup-scripts
 	rm -rf ~/.local/scripts
@@ -24,18 +24,6 @@ starship:
 tmux: backup-tmux
 	rm -rf ~/.config/tmux
 	ln -s $(CWD)/tmux ~/.config/tmux
-
-yabai: backup-yabai
-	rm -rf ~/.config/yabai
-	ln -s $(CWD)/yabai ~/.config/yabai
-
-skhd: backup-skhd
-	rm -rf ~/.config/skhd
-	ln -s $(CWD)/skhd ~/.config/skhd
-
-sketchybar: backup-sketchybar
-	rm -rf ~/.config/sketchybar
-	ln -s $(CWD)/sketchybar ~/.config/sketchybar
 
 karabiner: backup-karabiner
 	rm -rf ~/.config/karabiner
@@ -58,15 +46,6 @@ backup-tmux:
 
 backup-alacritty:
 	-cp -r ~/.config/alacritty ./backups/alacritty-backup-$(TIMESTAMP)
-
-backup-yabai:
-	-cp -r ~/.config/yabai ./backups/yabai-backup-$(TIMESTAMP)
-
-backup-skhd:
-	-cp -r ~/.config/skhd ./backups/skhd-backup-$(TIMESTAMP)
-
-backup-sketchybar:
-	-cp -r ~/.config/sketchybar ./backups/sketchybar-backup-$(TIMESTAMP)
 
 backup-karabiner:
 	-cp -r ~/.config/karabiner ./backups/karabiner-backup-$(TIMESTAMP)
