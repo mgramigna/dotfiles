@@ -5,6 +5,7 @@ local harpoon_keys = {
 	mark_two = "<leader>m2",
 	mark_three = "<leader>m3",
 	mark_four = "<leader>m4",
+	mark_four = "<leader>m5",
 }
 
 local used_keys = {}
@@ -23,7 +24,7 @@ return {
 		harpoon:setup()
 
 		vim.keymap.set("n", "<leader>zf", function()
-			harpoon:list():append()
+			harpoon:list():add()
 		end)
 
 		vim.keymap.set("n", "<leader>zm", function()
