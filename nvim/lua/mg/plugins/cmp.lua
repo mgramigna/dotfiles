@@ -13,12 +13,8 @@ return {
 	config = function()
 		local cmp = require("cmp")
 		local lspkind = require("lspkind")
-		local luasnip = require("luasnip")
 
-		local has_words_before = function()
-			local line, col = unpack(vim.api.nvim_win_get_cursor(0))
-			return col ~= 0 and vim.api.nvim_buf_get_lines(0, line - 1, line, true)[1]:sub(col, col):match("%s") == nil
-		end
+		lspkind.init({})
 
 		cmp.setup({
 			snippet = {
@@ -31,32 +27,25 @@ return {
 				documentation = cmp.config.window.bordered(),
 			},
 			mapping = cmp.mapping.preset.insert({
+				["<C-n>"] = cmp.mapping.select_next_item({ behavior = cmp.SelectBehavior.Insert }),
+				["<C-p>"] = cmp.mapping.select_prev_item({ behavior = cmp.SelectBehavior.Insert }),
+				["<CR>"] = cmp.mapping(
+					cmp.mapping.confirm({
+						behavior = cmp.ConfirmBehavior.Insert,
+						select = true,
+					}),
+					{ "i", "c" }
+				),
+				["<C-y>"] = cmp.mapping(
+					cmp.mapping.confirm({
+						behavior = cmp.ConfirmBehavior.Insert,
+						select = true,
+					}),
+					{ "i", "c" }
+				),
 				["<C-f>"] = cmp.mapping.scroll_docs(-4),
 				["<C-b>"] = cmp.mapping.scroll_docs(4),
-				["<C-y>"] = cmp.mapping.complete(),
-				["<C-e>"] = cmp.mapping.abort(),
-				["<CR>"] = cmp.mapping.confirm({ select = true }),
-				["<Tab>"] = cmp.mapping(function(fallback)
-					if cmp.visible() then
-						cmp.select_next_item()
-					elseif luasnip.expand_or_jumpable() then
-						luasnip.expand_or_jump()
-					elseif has_words_before() then
-						cmp.complete()
-					else
-						fallback()
-					end
-				end, { "i", "s" }),
-
-				["<S-Tab>"] = cmp.mapping(function(fallback)
-					if cmp.visible() then
-						cmp.select_prev_item()
-					elseif luasnip.jumpable(-1) then
-						luasnip.jump(-1)
-					else
-						fallback()
-					end
-				end, { "i", "s" }),
+				["<C-x>"] = cmp.mapping.abort(),
 			}),
 			sources = cmp.config.sources({
 				{ name = "nvim_lsp" },
@@ -78,6 +67,24 @@ return {
 				}),
 			},
 		})
+
+		local ls = require("luasnip")
+		ls.config.set_config({
+			history = false,
+			updateevents = "TextChanged,TextChangedI",
+		})
+
+		vim.keymap.set({ "i", "s" }, "<C-k>", function()
+			if ls.expand_or_jumpable() then
+				ls.expand_or_jump()
+			end
+		end, { silent = true })
+
+		vim.keymap.set({ "i", "s" }, "<C-j>", function()
+			if ls.jumpable(-1) then
+				ls.jump(-1)
+			end
+		end, { silent = true })
 
 		require("luasnip.loaders.from_vscode").lazy_load({
 			paths = { "~/.local/share/nvim/lazy/friendly-snippets", "~/.config/nvim/snippets" },
