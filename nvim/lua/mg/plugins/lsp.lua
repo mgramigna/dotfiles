@@ -7,23 +7,6 @@ return {
 		end,
 	},
 	{
-		"glepnir/lspsaga.nvim",
-		event = "LspAttach",
-		config = function()
-			require("lspsaga").setup({
-				diagnostic = {
-					jump_num_shortcut = false,
-					show_code_action = false,
-				},
-				lightbulb = {
-					enable = false,
-				},
-			})
-
-			vim.keymap.set({ "n", "t" }, "<leader>lt", "<cmd>Lspsaga term_toggle<CR>")
-		end,
-	},
-	{
 		"folke/trouble.nvim",
 		cmd = "Trouble",
 		dependencies = { "nvim-tree/nvim-web-devicons" },
@@ -78,9 +61,7 @@ return {
 			},
 			{
 				"j-hui/fidget.nvim",
-				config = function()
-					require("fidget").setup()
-				end,
+				opts = {},
 			},
 			{
 				"williamboman/mason-lspconfig.nvim",
@@ -90,6 +71,7 @@ return {
 							"astro",
 							"eslint",
 							"jdtls",
+							"jsonls",
 							"lua_ls",
 							"prismals",
 							"pyright",
@@ -134,7 +116,6 @@ return {
 					vim.keymap.set("n", "]g", vim.diagnostic.goto_next)
 					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
-					vim.keymap.set("n", "<leader>o", "<cmd>Lspsaga outline<CR>", opts)
 
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
 

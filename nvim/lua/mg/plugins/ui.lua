@@ -17,6 +17,18 @@ return {
 		end,
 	},
 	{
+		{
+			"stevearc/oil.nvim",
+			dependencies = { "nvim-tree/nvim-web-devicons" },
+			config = function()
+				require("oil").setup()
+
+				vim.keymap.set("n", "<leader>o", vim.cmd.Oil)
+				vim.keymap.set("n", "<leader>of", "<CMD>Oil --float<CR>")
+			end,
+		},
+	},
+	{
 		"nvim-neo-tree/neo-tree.nvim",
 		branch = "v2.x",
 		dependencies = {

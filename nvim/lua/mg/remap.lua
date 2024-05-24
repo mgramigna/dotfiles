@@ -18,3 +18,7 @@ vim.keymap.set("n", "<leader>sr", [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left>
 
 -- Print full file path
 vim.keymap.set("n", "<leader>fp", "<cmd>lua print(vim.fn.expand('%'))<cr>")
+
+-- Tab navigation
+vim.keymap.set("n", "<leader>tn", "<cmd>tabnext<cr>")
+vim.keymap.set("n", "<leader>tp", "<cmd>tabprevious<cr>")
