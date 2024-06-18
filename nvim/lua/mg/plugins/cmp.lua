@@ -10,12 +10,15 @@ return {
 		"onsails/lspkind.nvim",
 		"rafamadriz/friendly-snippets",
 		"kristijanhusak/vim-dadbod-completion",
+		"david-kunz/cmp-npm",
 	},
 	config = function()
 		local cmp = require("cmp")
 		local lspkind = require("lspkind")
 
 		lspkind.init({})
+
+		require("cmp-npm").setup({})
 
 		cmp.setup({
 			snippet = {
@@ -60,6 +63,14 @@ return {
 		cmp.setup.filetype({ "sql" }, {
 			sources = {
 				{ name = "vim-dadbod-completion" },
+				{ name = "buffer" },
+			},
+		})
+
+		cmp.setup.filetype({ "json" }, {
+			sources = {
+				{ name = "npm", keyword_length = 4 },
+				{ name = "path" },
 				{ name = "buffer" },
 			},
 		})

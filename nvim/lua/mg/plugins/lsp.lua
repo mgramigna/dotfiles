@@ -74,7 +74,7 @@ return {
 							"jsonls",
 							"lua_ls",
 							"prismals",
-							"pyright",
+							"python-lsp-server",
 							"rust_analyzer",
 							"tailwindcss",
 							"texlab",
@@ -118,6 +118,7 @@ return {
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
+					-- vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
 
 					vim.api.nvim_create_autocmd("BufWritePre", {
 						group = eslint_group,
