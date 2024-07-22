@@ -31,34 +31,34 @@ return {
 					vim.keymap.set("n", "<leader>ti", "<cmd>TwoslashQueriesInspect<cr>", { noremap = true })
 				end,
 			},
-			{
-				"pmizio/typescript-tools.nvim",
-				dependencies = { "nvim-lua/plenary.nvim" },
-				config = function()
-					local api = require("typescript-tools.api")
-					require("typescript-tools").setup({
-						on_attach = function(client, bufnr)
-							require("twoslash-queries").attach(client, bufnr)
-						end,
-						handlers = {
-							-- Ignore "X is defined but never read" (handled by eslint)
-							["textDocument/publishDiagnostics"] = api.filter_diagnostics({ 6133 }),
-							["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { border = "rounded" }),
-						},
-						settings = {
-							separate_diagnostic_server = true,
-							publish_diagnostic_on = "insert_leave",
-							tsserver_max_memory = "auto",
-							expose_as_code_action = "all",
-						},
-					})
+			-- {
+			-- 	"pmizio/typescript-tools.nvim",
+			-- 	dependencies = { "nvim-lua/plenary.nvim" },
+			-- 	config = function()
+			-- 		local api = require("typescript-tools.api")
+			-- 		require("typescript-tools").setup({
+			-- 			on_attach = function(client, bufnr)
+			-- 				require("twoslash-queries").attach(client, bufnr)
+			-- 			end,
+			-- 			handlers = {
+			-- 				-- Ignore "X is defined but never read" (handled by eslint)
+			-- 				["textDocument/publishDiagnostics"] = api.filter_diagnostics({ 6133 }),
+			-- 				["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { border = "rounded" }),
+			-- 			},
+			-- 			settings = {
+			-- 				separate_diagnostic_server = true,
+			-- 				publish_diagnostic_on = "insert_leave",
+			-- 				tsserver_max_memory = "auto",
+			-- 				expose_as_code_action = "all",
+			-- 			},
+			-- 		})
 
-					vim.keymap.set("n", "<leader>ai", "<cmd>TSToolsAddMissingImports<cr>", { noremap = true })
-					vim.keymap.set("n", "<leader>ri", "<cmd>TSToolsRemoveUnusedImports<cr>", { noremap = true })
-					vim.keymap.set("n", "<leader>sd", "<cmd>TSToolsGoToSourceDefinition<cr>", { noremap = true })
-					vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
-				end,
-			},
+			-- 		vim.keymap.set("n", "<leader>ai", "<cmd>TSToolsAddMissingImports<cr>", { noremap = true })
+			-- 		vim.keymap.set("n", "<leader>ri", "<cmd>TSToolsRemoveUnusedImports<cr>", { noremap = true })
+			-- 		vim.keymap.set("n", "<leader>sd", "<cmd>TSToolsGoToSourceDefinition<cr>", { noremap = true })
+			-- 		vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
+			-- 	end,
+			-- },
 			{
 				"j-hui/fidget.nvim",
 				opts = {},
@@ -71,13 +71,13 @@ return {
 							"astro",
 							"eslint",
 							"jdtls",
-							"jsonls",
 							"lua_ls",
 							"prismals",
 							"python-lsp-server",
 							"rust_analyzer",
 							"tailwindcss",
 							"texlab",
+							"tsserver",
 						},
 					})
 				end,
@@ -118,7 +118,7 @@ return {
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
-					-- vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
+					vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
 
 					vim.api.nvim_create_autocmd("BufWritePre", {
 						group = eslint_group,
@@ -144,6 +144,16 @@ return {
 					lspconfig[server_name].setup({
 						capabilities = capabilities,
 						handlers = default_handlers,
+					})
+				end,
+
+				["tsserver"] = function()
+					lspconfig["tsserver"].setup({
+						capabilities = capabilities,
+						handlers = default_handlers,
+						on_attach = function(client, bufnr)
+							require("twoslash-queries").attach(client, bufnr)
+						end,
 					})
 				end,
 
