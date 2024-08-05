@@ -73,7 +73,7 @@ return {
 							"jdtls",
 							"lua_ls",
 							"prismals",
-							"python-lsp-server",
+							"pylsp",
 							"rust_analyzer",
 							"tailwindcss",
 							"texlab",
@@ -176,6 +176,22 @@ return {
 							Lua = {
 								completion = {
 									callSnippet = "Replace",
+								},
+							},
+						},
+					})
+				end,
+
+				["pylsp"] = function()
+					lspconfig["pylsp"].setup({
+						capabilities = capabilities,
+						handlers = default_handlers,
+						settings = {
+							pylsp = {
+								plugins = {
+									pycodestyle = {
+										ignore = { "E501", "W503" },
+									},
 								},
 							},
 						},
