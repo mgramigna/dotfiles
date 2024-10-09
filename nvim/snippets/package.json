@@ -1,5 +1,5 @@
 {
-  "name": "cql-snippets",
+  "name": "custom-snippets",
   "contributes": {
     "snippets": [
       {
@@ -7,6 +7,19 @@
           "cqlang"
         ],
         "path": "./cql.json"
+      },
+      {
+        "language": [
+          "typescript",
+          "typescriptreact"
+        ],
+        "path": "./typescript.json"
+      },
+      {
+        "language": [
+          "typescriptreact"
+        ],
+        "path": "./typescriptreact.json"
       }
     ]
   }

@@ -1,0 +1,28 @@
+{
+  "Storybook Story": {
+    "prefix": ["sb"],
+    "body": [
+      "import { $1 } from './$1';",
+      "import type { Meta, StoryObj } from '@storybook/react';",
+      "",
+      "const meta: Meta<typeof $1> = {",
+      "  args: {},",
+      "  component: $1,",
+      "  parameters: {",
+      "    chromatic: {",
+      "      disableSnapshot: false,",
+      "    },",
+      "  },",
+      "  title: '$2/$1'",
+      "};",
+      "",
+      "export default meta;",
+      "type Story = StoryObj<typeof $1>;",
+      "",
+      "export const Default: Story = {",
+      "  render: (args) => <$1 {...args} />,",
+      "};"
+    ],
+    "description": "Create a storybook story for a component"
+  }
+}

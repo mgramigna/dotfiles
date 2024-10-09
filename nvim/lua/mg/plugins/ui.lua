@@ -29,17 +29,6 @@ return {
 		},
 	},
 	{
-		"nvim-neo-tree/neo-tree.nvim",
-		branch = "v2.x",
-		dependencies = {
-			"MunifTanjim/nui.nvim",
-		},
-		keys = { "<C-n>" },
-		config = function()
-			vim.keymap.set("n", "<C-n>", vim.cmd.NeoTreeShowToggle)
-		end,
-	},
-	{
 		"folke/zen-mode.nvim",
 		cmd = "ZenMode",
 		config = function()

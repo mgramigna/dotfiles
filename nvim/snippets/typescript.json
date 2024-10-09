@@ -1,0 +1,10 @@
+{
+  "zod infer": {
+    "prefix": "zi",
+    "body": ["export type $1 = z.infer<typeof $2>"]
+  },
+  "trpc procedure": {
+    "prefix": "tp",
+    "body": ["$1: $2.input($3).$4(async ({ ctx, input }) => {$5})"]
+  }
+}
