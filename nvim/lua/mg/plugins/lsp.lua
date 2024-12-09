@@ -169,6 +169,17 @@ return {
 						},
 					})
 				end,
+
+				["eslint"] = function()
+					lspconfig["eslint"].setup({
+						capabilities = capabilities,
+						handlers = default_handlers,
+						flags = {
+							allow_incremental_sync = false,
+							debounce_text_changes = 1000,
+						},
+					})
+				end,
 			})
 		end,
 	},

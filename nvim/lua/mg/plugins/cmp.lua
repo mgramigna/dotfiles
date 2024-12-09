@@ -75,6 +75,14 @@ return {
 			},
 		})
 
+		-- https://github.com/hrsh7th/nvim-cmp/issues/2106
+		cmp.setup.filetype({ "rust" }, {
+			mapping = cmp.mapping.preset.insert({
+				["<C-n>"] = cmp.mapping.select_next_item({ behavior = cmp.SelectBehavior.Select }),
+				["<C-p>"] = cmp.mapping.select_prev_item({ behavior = cmp.SelectBehavior.Select }),
+			}),
+		})
+
 		local ls = require("luasnip")
 		ls.config.set_config({
 			history = false,

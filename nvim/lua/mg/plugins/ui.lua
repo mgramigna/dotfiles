@@ -12,6 +12,7 @@ return {
 				options = { theme = "catppuccin" },
 				sections = {
 					lualine_x = { "filetype" },
+					lualine_c = { { "filename", path = 1 } },
 				},
 			})
 		end,
