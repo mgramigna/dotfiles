@@ -20,6 +20,22 @@ return {
 
 		require("cmp-npm").setup({})
 
+		local default_mappings = cmp.mapping.preset.insert({
+			["<C-n>"] = cmp.mapping.select_next_item({ behavior = cmp.SelectBehavior.Insert }),
+			["<C-p>"] = cmp.mapping.select_prev_item({ behavior = cmp.SelectBehavior.Insert }),
+			["<C-y>"] = cmp.mapping.complete(),
+			["<CR>"] = cmp.mapping(
+				cmp.mapping.confirm({
+					behavior = cmp.ConfirmBehavior.Insert,
+					select = true,
+				}),
+				{ "i", "c" }
+			),
+			["<C-f>"] = cmp.mapping.scroll_docs(-4),
+			["<C-b>"] = cmp.mapping.scroll_docs(4),
+			["<C-x>"] = cmp.mapping.abort(),
+		})
+
 		cmp.setup({
 			snippet = {
 				expand = function(args)
@@ -30,21 +46,7 @@ return {
 				completion = cmp.config.window.bordered(),
 				documentation = cmp.config.window.bordered(),
 			},
-			mapping = cmp.mapping.preset.insert({
-				["<C-n>"] = cmp.mapping.select_next_item({ behavior = cmp.SelectBehavior.Insert }),
-				["<C-p>"] = cmp.mapping.select_prev_item({ behavior = cmp.SelectBehavior.Insert }),
-				["<C-y>"] = cmp.mapping.complete(),
-				["<CR>"] = cmp.mapping(
-					cmp.mapping.confirm({
-						behavior = cmp.ConfirmBehavior.Insert,
-						select = true,
-					}),
-					{ "i", "c" }
-				),
-				["<C-f>"] = cmp.mapping.scroll_docs(-4),
-				["<C-b>"] = cmp.mapping.scroll_docs(4),
-				["<C-x>"] = cmp.mapping.abort(),
-			}),
+			mapping = default_mappings,
 			sources = cmp.config.sources({
 				{ name = "nvim_lsp" },
 				{ name = "path" },
@@ -77,7 +79,7 @@ return {
 
 		-- https://github.com/hrsh7th/nvim-cmp/issues/2106
 		cmp.setup.filetype({ "rust" }, {
-			mapping = cmp.mapping.preset.insert({
+			mapping = vim.tbl_extend("force", default_mappings, {
 				["<C-n>"] = cmp.mapping.select_next_item({ behavior = cmp.SelectBehavior.Select }),
 				["<C-p>"] = cmp.mapping.select_prev_item({ behavior = cmp.SelectBehavior.Select }),
 			}),
