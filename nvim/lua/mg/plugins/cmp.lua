@@ -16,8 +16,6 @@ return {
 		local cmp = require("cmp")
 		local lspkind = require("lspkind")
 
-		lspkind.init({})
-
 		require("cmp-npm").setup({})
 
 		local default_mappings = cmp.mapping.preset.insert({
@@ -45,6 +43,19 @@ return {
 			window = {
 				completion = cmp.config.window.bordered(),
 				documentation = cmp.config.window.bordered(),
+			},
+			---@diagnostic disable-next-line: missing-fields
+			formatting = {
+				format = lspkind.cmp_format({
+					mode = "symbol",
+					menu = {
+						buffer = "[Buffer]",
+						nvim_lsp = "[LSP]",
+						luasnip = "[LuaSnip]",
+						nvim_lua = "[Lua]",
+						latex_symbols = "[Latex]",
+					},
+				}),
 			},
 			mapping = default_mappings,
 			sources = cmp.config.sources({

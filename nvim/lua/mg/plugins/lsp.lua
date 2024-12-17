@@ -18,7 +18,7 @@ return {
 		dependencies = {
 			{
 				"mrcjkb/rustaceanvim",
-				version = "^4",
+				version = "^5",
 				ft = { "rust" },
 			},
 			{
@@ -38,6 +38,7 @@ return {
 			{
 				"williamboman/mason-lspconfig.nvim",
 				config = function()
+					---@diagnostic disable-next-line: missing-fields
 					require("mason-lspconfig").setup({
 						ensure_installed = {
 							"astro",
@@ -57,7 +58,7 @@ return {
 			{
 				"folke/neodev.nvim",
 				config = function()
-					require("neodev").setup({})
+					require("neodev").setup()
 				end,
 			},
 		},
@@ -172,6 +173,17 @@ return {
 
 				["eslint"] = function()
 					lspconfig["eslint"].setup({
+						capabilities = capabilities,
+						handlers = default_handlers,
+						flags = {
+							allow_incremental_sync = false,
+							debounce_text_changes = 1000,
+						},
+					})
+				end,
+
+				["tailwindcss"] = function()
+					lspconfig["tailwindcss"].setup({
 						capabilities = capabilities,
 						handlers = default_handlers,
 						flags = {

@@ -38,8 +38,10 @@ return {
 					mappings = { n = { ["q"] = actions.close } },
 				},
 				pickers = {
-					buffers = { theme = "dropdown" },
-					treesitter = { theme = "dropdown" },
+					find_files = { theme = "ivy" },
+					git_files = { theme = "ivy" },
+					buffers = { theme = "ivy" },
+					treesitter = { theme = "ivy" },
 					spell_suggest = { theme = "cursor" },
 				},
 				extensions = {
