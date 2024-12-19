@@ -61,6 +61,7 @@ return {
 					require("neodev").setup()
 				end,
 			},
+			{ "saghen/blink.cmp" },
 		},
 		config = function()
 			local lspconfig = require("lspconfig")
@@ -104,7 +105,8 @@ return {
 				end,
 			})
 
-			local capabilities = require("cmp_nvim_lsp").default_capabilities()
+			local capabilities = require("blink.cmp").get_lsp_capabilities()
+			-- local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
 			vim.diagnostic.config({
 				float = {

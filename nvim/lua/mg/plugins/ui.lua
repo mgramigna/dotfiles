@@ -28,7 +28,7 @@ return {
 			config = function()
 				require("oil").setup()
 
-				vim.keymap.set("n", "<leader>o", vim.cmd.Oil)
+				vim.keymap.set("n", "-", vim.cmd.Oil)
 				vim.keymap.set("n", "<leader>of", "<CMD>Oil --float<CR>")
 			end,
 		},

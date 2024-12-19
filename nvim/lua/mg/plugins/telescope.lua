@@ -19,7 +19,7 @@ end
 return {
 	{
 		"nvim-telescope/telescope.nvim",
-		tag = "0.1.7",
+		tag = "0.1.8",
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 			{
@@ -103,6 +103,8 @@ return {
 
 			telescope.load_extension("fzf")
 			telescope.load_extension("undo")
+
+			require("mg.config.telescope").setup({})
 
 			vim.keymap.set("n", telescope_keys.undo, "<cmd>Telescope undo<cr>", { silent = true })
 		end,
