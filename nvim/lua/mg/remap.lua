@@ -22,3 +22,12 @@ vim.keymap.set("n", "<leader>fp", "<cmd>lua print(vim.fn.expand('%'))<cr>")
 -- Tab navigation
 vim.keymap.set("n", "<leader>tn", "<cmd>tabnext<cr>")
 vim.keymap.set("n", "<leader>tp", "<cmd>tabprevious<cr>")
+
+-- Term
+vim.keymap.set("n", "<leader>st", function()
+	vim.cmd.vnew()
+	vim.cmd.term()
+	vim.cmd.wincmd("J")
+	vim.api.nvim_win_set_height(0, 15)
+	vim.cmd.startinsert()
+end)
