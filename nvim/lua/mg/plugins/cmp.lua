@@ -31,14 +31,12 @@ return {
 			-- default list of enabled providers defined so that you can extend it
 			-- elsewhere in your config, without redefining it, via `opts_extend`
 			sources = {
-				completion = {
-					enabled_providers = { "lsp", "dadbod", "path", "snippets", "buffer" },
-				},
+				default = { "lsp", "dadbod", "path", "snippets", "buffer" },
 				providers = {
 					dadbod = { name = "Dadbod", module = "vim_dadbod_completion.blink" },
 				},
 				-- optionally disable cmdline completions
-				-- cmdline = {},
+				cmdline = {},
 			},
 
 			-- experimental signature help support
