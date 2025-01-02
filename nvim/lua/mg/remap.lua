@@ -31,3 +31,8 @@ vim.keymap.set("n", "<leader>st", function()
 	vim.api.nvim_win_set_height(0, 15)
 	vim.cmd.startinsert()
 end)
+
+-- Lua execution
+vim.keymap.set("n", "<space><space>x", "<cmd>source %<CR>", { silent = true })
+vim.keymap.set("n", "<space>x", ":.lua<CR>", { silent = true })
+vim.keymap.set("v", "<space>x", ":lua<CR>", { silent = true })

@@ -5,6 +5,9 @@ return {
 		dependencies = { "rafamadriz/friendly-snippets", "kristijanhusak/vim-dadbod-completion" },
 		version = "v0.*",
 		opts = {
+			completion = {
+				documentation = { auto_show = true, auto_show_delay_ms = 500 },
+			},
 			keymap = {
 				preset = "default",
 				["<CR>"] = { "select_and_accept", "fallback" },
@@ -29,7 +32,7 @@ return {
 			-- elsewhere in your config, without redefining it, via `opts_extend`
 			sources = {
 				completion = {
-					enabled_providers = { "lsp", "path", "snippets", "buffer", "dadbod" },
+					enabled_providers = { "lsp", "dadbod", "path", "snippets", "buffer" },
 				},
 				providers = {
 					dadbod = { name = "Dadbod", module = "vim_dadbod_completion.blink" },
