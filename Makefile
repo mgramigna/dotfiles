@@ -1,9 +1,9 @@
 CWD = $(shell pwd)
 TIMESTAMP = $(shell date +%s)
 
-.PHONY: alacritty nvim tmux scripts starship karabiner
+.PHONY: alacritty nvim tmux scripts starship karabiner ghostty
 
-all: nvim tmux alacritty scripts starship karabiner
+all: nvim tmux alacritty ghostty scripts starship karabiner
 
 scripts: backup-scripts
 	rm -rf ~/.local/scripts
@@ -12,6 +12,10 @@ scripts: backup-scripts
 alacritty: backup-alacritty
 	rm -rf ~/.config/alacritty
 	ln -s $(CWD)/alacritty ~/.config/alacritty
+
+ghostty: backup-ghostty
+	rm -rf ~/.config/ghostty
+	ln -s $(CWD)/ghostty ~/.config/ghostty
 
 nvim: backup-nvim
 	rm -rf ~/.config/nvim
@@ -46,6 +50,9 @@ backup-tmux:
 
 backup-alacritty:
 	-cp -r ~/.config/alacritty ./backups/alacritty-backup-$(TIMESTAMP)
+
+backup-ghostty:
+	-cp -r ~/.config/ghostty ./backups/ghostty-backup-$(TIMESTAMP)
 
 backup-karabiner:
 	-cp -r ~/.config/karabiner ./backups/karabiner-backup-$(TIMESTAMP)
