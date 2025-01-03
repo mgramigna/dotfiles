@@ -1,3 +1,4 @@
+---@diagnostic disable: missing-fields
 local telescope_keys = {
 	find_files = "<C-t>",
 	git_files = "<C-p>",
