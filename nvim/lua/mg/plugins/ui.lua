@@ -12,9 +12,9 @@ return {
 				options = { theme = "catppuccin" },
 				sections = {
 					lualine_a = { "mode" },
-					lualine_b = { "branch", "diff" },
+					lualine_b = { "branch", "diff", "diagnostics" },
 					lualine_c = { { "filename", path = 1 } },
-					lualine_x = { "diagnostics" },
+					lualine_x = {},
 					lualine_y = { "filetype" },
 					lualine_z = {},
 				},
@@ -41,6 +41,23 @@ return {
 				window = {
 					width = 0.66,
 				},
+			})
+		end,
+	},
+	{
+		"stevearc/quicker.nvim",
+		event = "FileType qf",
+		config = function()
+			require("quicker").setup({})
+			vim.keymap.set("n", "<leader>q", function()
+				require("quicker").toggle()
+			end, {
+				desc = "Toggle quickfix",
+			})
+			vim.keymap.set("n", "<leader>l", function()
+				require("quicker").toggle({ loclist = true })
+			end, {
+				desc = "Toggle loclist",
 			})
 		end,
 	},

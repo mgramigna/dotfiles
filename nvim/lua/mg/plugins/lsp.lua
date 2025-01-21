@@ -7,12 +7,6 @@ return {
 		end,
 	},
 	{
-		"folke/trouble.nvim",
-		cmd = "Trouble",
-		dependencies = { "nvim-tree/nvim-web-devicons" },
-		opts = {},
-	},
-	{
 		"neovim/nvim-lspconfig",
 		event = "BufRead",
 		dependencies = {
@@ -42,6 +36,7 @@ return {
 					require("mason-lspconfig").setup({
 						ensure_installed = {
 							"astro",
+							"eslint",
 							"jdtls",
 							"lua_ls",
 							"prismals",
@@ -90,22 +85,21 @@ return {
 					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
-					-- local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
-					-- vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
+					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
+					vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
 
-					-- vim.api.nvim_create_autocmd("BufWritePre", {
-					-- 	group = eslint_group,
-					-- 	callback = function()
-					-- 		if vim.fn.exists(":EslintFixAll") > 0 then
-					-- 			vim.cmd("EslintFixAll")
-					-- 		end
-					-- 	end,
-					-- })
+					vim.api.nvim_create_autocmd("BufWritePre", {
+						group = eslint_group,
+						callback = function()
+							if vim.fn.exists(":EslintFixAll") > 0 then
+								vim.cmd("EslintFixAll")
+							end
+						end,
+					})
 				end,
 			})
 
 			local capabilities = require("blink.cmp").get_lsp_capabilities()
-			-- local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
 			vim.diagnostic.config({
 				float = {
@@ -172,16 +166,16 @@ return {
 					})
 				end,
 
-				-- ["eslint"] = function()
-				-- 	lspconfig["eslint"].setup({
-				-- 		capabilities = capabilities,
-				-- 		handlers = default_handlers,
-				-- 		flags = {
-				-- 			allow_incremental_sync = false,
-				-- 			debounce_text_changes = 1000,
-				-- 		},
-				-- 	})
-				-- end,
+				["eslint"] = function()
+					lspconfig["eslint"].setup({
+						capabilities = capabilities,
+						handlers = default_handlers,
+						flags = {
+							allow_incremental_sync = false,
+							debounce_text_changes = 1000,
+						},
+					})
+				end,
 
 				["tailwindcss"] = function()
 					lspconfig["tailwindcss"].setup({

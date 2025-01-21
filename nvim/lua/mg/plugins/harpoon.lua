@@ -17,7 +17,6 @@ end
 return {
 	"theprimeagen/harpoon",
 	branch = "harpoon2",
-	keys = used_keys,
 	config = function()
 		local harpoon = require("harpoon")
 

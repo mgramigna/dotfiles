@@ -46,17 +46,17 @@ end
 return {
 	"mfussenegger/nvim-lint",
 	config = function()
-		vim.env.ESLINT_D_PPID = vim.fn.getpid()
-		if current_dir_contains("infrastructure") then
-			vim.env.ESLINT_D_ROOT = "/Users/matthew.gramigna/code/infrastructure/common/temp/"
-		end
+		-- vim.env.ESLINT_D_PPID = vim.fn.getpid()
+		-- if current_dir_contains("infrastructure") then
+		-- 	vim.env.ESLINT_D_ROOT = "/Users/matthew.gramigna/code/infrastructure/common/temp/"
+		-- end
 
 		require("lint").linters_by_ft = {
 			python = { "mypy" },
-			typescript = { "eslint_d" },
-			javascript = { "eslint_d" },
-			typescriptreact = { "eslint_d" },
-			javascriptreact = { "eslint_d" },
+			-- typescript = { "eslint_d" },
+			-- javascript = { "eslint_d" },
+			-- typescriptreact = { "eslint_d" },
+			-- javascriptreact = { "eslint_d" },
 		}
 
 		vim.api.nvim_create_autocmd({ "BufWritePost" }, {
@@ -65,6 +65,6 @@ return {
 			end,
 		})
 
-		post_setup_eslint_d()
+		-- post_setup_eslint_d()
 	end,
 }
