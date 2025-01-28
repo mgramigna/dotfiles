@@ -8,25 +8,17 @@ make
 
 This will also create backups of existing directory in `./backups`. To clean up (remove) backups in the `./backups` folder, run `make clean`.
 
-To link an individual dotfile:
+To link an individual dotfile directory, e.g. neovim only:
 
 ```bash
-make nvim # or
-make alacritty # or
-make tmux # or
-make scripts
+make nvim
 ```
 
 ## Neovim first time setup
 
 Recommended dependencies (not required):
 
-- Install [ripgrep](https://github.com/BurntSushi/ripgrep) (improves Telescope and vimgrep experience)
-- Install [prettier](https://prettier.io/) (allows for formatter to work globally):
-
-```bash
-npm install -g prettier
-```
+- Install [ripgrep](https://github.com/BurntSushi/ripgrep?tab=readme-ov-file#installation) (improves Telescope and vimgrep experience)
 
 ## Tmux first time setup
 
@@ -34,10 +26,4 @@ npm install -g prettier
 
 ```bash
 make tpm
-```
-
-### Install reattach-to-user-namespace For System Clipboard (macOS only)
-
-```bash
-brew install reattach-to-user-namespace
 ```
