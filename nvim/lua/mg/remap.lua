@@ -36,3 +36,7 @@ end)
 vim.keymap.set("n", "<space><space>x", "<cmd>source %<CR>", { silent = true })
 vim.keymap.set("n", "<space>x", ":.lua<CR>", { silent = true })
 vim.keymap.set("v", "<space>x", ":lua<CR>", { silent = true })
+
+-- Typos
+vim.keymap.set("c", "Q", "q")
+vim.keymap.set("c", "W", "w")
