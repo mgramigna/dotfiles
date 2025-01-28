@@ -1,20 +1,13 @@
 ---@diagnostic disable: missing-fields
+--- TODO: deprecate this when comfortable with newer binds
 local telescope_keys = {
 	find_files = "<C-t>",
 	git_files = "<C-p>",
 	live_grep = "<C-s>",
 	buffers = "<C-b>",
-	treesitter = "<leader>ts",
 	grep_string = "<leader>gs",
 	spell_suggest = "<leader>x",
-	undo = "<leader>u",
 }
-
-local used_keys = {}
-
-for _, v in pairs(telescope_keys) do
-	table.insert(used_keys, v)
-end
 
 return {
 	{
@@ -26,13 +19,12 @@ return {
 				"nvim-telescope/telescope-fzf-native.nvim",
 				build = "make",
 			},
-			"debugloop/telescope-undo.nvim",
 		},
-		keys = used_keys,
 		config = function()
 			local telescope = require("telescope")
-
+			local builtin = require("telescope.builtin")
 			local actions = require("telescope.actions")
+
 			telescope.setup({
 				defaults = {
 					mappings = { n = { ["q"] = actions.close } },
@@ -41,7 +33,6 @@ return {
 					find_files = { theme = "ivy" },
 					git_files = { theme = "ivy" },
 					buffers = { theme = "ivy" },
-					treesitter = { theme = "ivy" },
 					spell_suggest = { theme = "cursor" },
 				},
 				extensions = {
@@ -51,61 +42,23 @@ return {
 						override_file_sorter = true,
 						case_mode = "smart_case",
 					},
-					undo = {
-						use_delta = false,
-					},
 				},
 			})
 
-			vim.keymap.set(
-				"n",
-				telescope_keys.find_files,
-				":lua require'telescope.builtin'.find_files()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.git_files,
-				":lua require'telescope.builtin'.git_files()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.live_grep,
-				":lua require'telescope.builtin'.live_grep()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.buffers,
-				":lua require'telescope.builtin'.buffers()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.treesitter,
-				":lua require'telescope.builtin'.treesitter()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.grep_string,
-				":lua require'telescope.builtin'.grep_string()<cr>",
-				{ silent = true }
-			)
-			vim.keymap.set(
-				"n",
-				telescope_keys.spell_suggest,
-				":lua require'telescope.builtin'.spell_suggest()<cr>",
-				{ silent = true }
-			)
+			vim.keymap.set("n", telescope_keys.find_files, builtin.find_files, { silent = true })
+			vim.keymap.set("n", "<leader>ff", builtin.find_files, { silent = true })
+			vim.keymap.set("n", telescope_keys.git_files, builtin.git_files, { silent = true })
+			vim.keymap.set("n", "<leader>fz", builtin.git_files, { silent = true })
+			vim.keymap.set("n", telescope_keys.live_grep, builtin.live_grep, { silent = true })
+			vim.keymap.set("n", "<leader>fb", builtin.buffers, { silent = true })
+			vim.keymap.set("n", "<leader>fs", builtin.grep_string, { silent = true })
+			vim.keymap.set("n", "<leader>fx", builtin.spell_suggest, { silent = true })
+			vim.keymap.set("n", "<leader>fh", builtin.help_tags, { silent = true })
+			vim.keymap.set("n", "<leader>fd", builtin.diagnostics, { silent = true })
 
 			telescope.load_extension("fzf")
-			telescope.load_extension("undo")
 
 			require("mg.config.telescope").setup({})
-
-			vim.keymap.set("n", telescope_keys.undo, "<cmd>Telescope undo<cr>", { silent = true })
 		end,
 	},
 }

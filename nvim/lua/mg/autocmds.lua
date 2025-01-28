@@ -34,11 +34,3 @@ vim.api.nvim_create_autocmd("RecordingLeave", {
 	group = cmd_height_group,
 	command = "setlocal cmdheight=0",
 })
-
-local prisma_group = vim.api.nvim_create_augroup("Prisma", { clear = true })
-
-vim.api.nvim_create_autocmd("BufWritePost", {
-	group = prisma_group,
-	pattern = "*.prisma",
-	command = "!npx prisma format --schema %",
-})

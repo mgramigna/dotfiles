@@ -1,19 +1,3 @@
-local harpoon_keys = {
-	add_file = "<leader>zf",
-	toggle_quick_menu = "<leader>zm",
-	mark_one = "<leader>m1",
-	mark_two = "<leader>m2",
-	mark_three = "<leader>m3",
-	mark_four = "<leader>m4",
-	mark_four = "<leader>m5",
-}
-
-local used_keys = {}
-
-for _, v in pairs(harpoon_keys) do
-	table.insert(used_keys, v)
-end
-
 return {
 	"theprimeagen/harpoon",
 	branch = "harpoon2",
