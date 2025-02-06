@@ -19,7 +19,7 @@ local hl_yank_group = vim.api.nvim_create_augroup("HighlightYank", { clear = tru
 vim.api.nvim_create_autocmd("TextYankPost", {
 	group = hl_yank_group,
 	callback = function()
-		vim.highlight.on_yank({ on_visual = false })
+		vim.highlight.on_yank()
 	end,
 })
 
