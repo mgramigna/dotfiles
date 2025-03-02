@@ -13,16 +13,26 @@ return {
 		},
 	},
 	config = function()
+		local biome_or_prettier = function()
+			local has_biome = vim.fn.filereadable(vim.fn.getcwd() .. "/biome.json") == 1
+
+			if has_biome then
+				return { "biome" }
+			else
+				return { "prettierd", "prettier", stop_after_first = true }
+			end
+		end
+
 		require("conform").setup({
 			formatters_by_ft = {
 				lua = { "stylua" },
-				javascript = { "biome", "prettierd", "prettier", stop_after_first = true },
-				javascriptreact = { "biome", "prettierd", "prettier", stop_after_first = true },
-				typescript = { "biome", "prettierd", "prettier", stop_after_first = true },
-				typescriptreact = { "biome", "prettierd", "prettier", stop_after_first = true },
-				json = { "biome", "prettierd", "prettier", stop_after_first = true },
+				javascript = biome_or_prettier,
+				javascriptreact = biome_or_prettier,
+				typescript = biome_or_prettier,
+				typescriptreact = biome_or_prettier,
+				json = biome_or_prettier,
 				markdown = { "prettierd", "prettier", stop_after_first = true },
-				astro = { "biome", "prettierd", "prettier", stop_after_first = true },
+				astro = biome_or_prettier,
 				rust = { "rustfmt" },
 				python = { "isort", "black" },
 			},

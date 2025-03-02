@@ -5,6 +5,7 @@ return {
 		dependencies = { "rafamadriz/friendly-snippets", "kristijanhusak/vim-dadbod-completion" },
 		version = "v0.*",
 		opts = {
+			cmdline = { enabled = false },
 			completion = {
 				documentation = { auto_show = true, auto_show_delay_ms = 500 },
 			},
@@ -35,8 +36,6 @@ return {
 				providers = {
 					dadbod = { name = "Dadbod", module = "vim_dadbod_completion.blink" },
 				},
-				-- optionally disable cmdline completions
-				cmdline = {},
 			},
 
 			-- experimental signature help support
