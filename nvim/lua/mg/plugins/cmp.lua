@@ -39,7 +39,7 @@ return {
 			},
 
 			-- experimental signature help support
-			signature = { enabled = false },
+			signature = { enabled = true },
 		},
 		opts_extend = { "sources.default" },
 	},

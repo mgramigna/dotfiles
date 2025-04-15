@@ -102,6 +102,7 @@ return {
 				float = {
 					border = "rounded",
 				},
+				virtual_text = true
 			})
 
 			require("mason-lspconfig").setup_handlers({
