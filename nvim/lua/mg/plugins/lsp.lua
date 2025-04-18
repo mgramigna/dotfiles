@@ -41,7 +41,8 @@ return {
 							"rust_analyzer",
 							"tailwindcss",
 							"texlab",
-							"ts_ls",
+							"vtsls"
+							-- "ts_ls",
 						},
 					})
 				end,
@@ -53,13 +54,10 @@ return {
 				end,
 			},
 			{ "saghen/blink.cmp" },
+			{ "yioneko/nvim-vtsls" }
 		},
 		config = function()
 			local lspconfig = require("lspconfig")
-
-			local default_handlers = {
-				["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, { border = "rounded" }),
-			}
 
 			vim.api.nvim_create_autocmd("LspAttach", {
 				group = vim.api.nvim_create_augroup("MgLspConfig", {}),
@@ -109,19 +107,34 @@ return {
 				function(server_name)
 					lspconfig[server_name].setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 					})
 				end,
 
-				["ts_ls"] = function()
-					lspconfig["ts_ls"].setup({
+				["vtsls"] = function()
+					require("lspconfig.configs").vtsls = require("vtsls").lspconfig
+
+					lspconfig.vtsls.setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 						on_attach = function(client, bufnr)
 							require("twoslash-queries").attach(client, bufnr)
 						end,
+						typescript = {
+							tsserver = {
+								maxTsServerMemory = 12288,
+							},
+						},
 					})
 				end,
+
+				-- ["ts_ls"] = function()
+				-- 	lspconfig["ts_ls"].setup({
+				-- 		capabilities = capabilities,
+				-- 		handlers = default_handlers,
+				-- 		on_attach = function(client, bufnr)
+				-- 			require("twoslash-queries").attach(client, bufnr)
+				-- 		end,
+				-- 	})
+				-- end,
 
 				["rust_analyzer"] = function()
 					vim.g.rustaceanvim = {
@@ -137,7 +150,6 @@ return {
 				["lua_ls"] = function()
 					lspconfig["lua_ls"].setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 						settings = {
 							Lua = {
 								completion = {
@@ -151,7 +163,6 @@ return {
 				["pylsp"] = function()
 					lspconfig["pylsp"].setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 						settings = {
 							pylsp = {
 								plugins = {
@@ -167,7 +178,6 @@ return {
 				["eslint"] = function()
 					lspconfig["eslint"].setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 						flags = {
 							allow_incremental_sync = false,
 							debounce_text_changes = 1000,
@@ -178,7 +188,6 @@ return {
 				["tailwindcss"] = function()
 					lspconfig["tailwindcss"].setup({
 						capabilities = capabilities,
-						handlers = default_handlers,
 						flags = {
 							allow_incremental_sync = false,
 							debounce_text_changes = 1000,
