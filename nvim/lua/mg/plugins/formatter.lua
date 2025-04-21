@@ -32,7 +32,7 @@ return {
 				typescriptreact = biome_or_prettier,
 				json = biome_or_prettier,
 				markdown = { "prettierd", "prettier", stop_after_first = true },
-				astro = biome_or_prettier,
+				astro = { "prettier" },
 				rust = { "rustfmt" },
 				python = { "isort", "black" },
 			},
