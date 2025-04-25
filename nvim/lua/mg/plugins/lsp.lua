@@ -76,7 +76,7 @@ return {
 				virtual_text = {
 					severity = { min = vim.diagnostic.severity.HINT },
 				},
-				underline = false,
+				underline = true,
 				severity_sort = true,
 				signs = {
 					text = {
