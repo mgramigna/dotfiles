@@ -39,3 +39,7 @@ vim.keymap.set("v", "<space>x", ":lua<CR>", { silent = true })
 
 -- Typos
 vim.keymap.set("c", "W", "w")
+
+-- Better wrapped line navigation
+vim.keymap.set("n", "j", "gj")
+vim.keymap.set("n", "k", "gk")
