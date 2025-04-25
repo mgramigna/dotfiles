@@ -22,10 +22,17 @@ return {
 	},
 	{
 		"olimorris/codecompanion.nvim",
-		opts = {},
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 			"nvim-treesitter/nvim-treesitter",
 		},
+		config = function()
+			require("codecompanion").setup({})
+
+			vim.keymap.set({ "n", "v" }, "<leader>ca", "<cmd>CodeCompanionActions<cr>", { noremap = true, silent = true })
+			vim.keymap.set({ "n", "v" }, "<leader>cc", "<cmd>CodeCompanionChat Toggle<cr>", { noremap = true, silent = true })
+
+			vim.cmd([[cab cc CodeCompanion]])
+		end
 	},
 }
