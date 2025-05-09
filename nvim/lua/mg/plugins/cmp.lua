@@ -11,7 +11,6 @@ return {
 			},
 			keymap = {
 				preset = "default",
-				["<CR>"] = { "select_and_accept", "fallback" },
 				["<C-h>"] = {
 					function(cmp)
 						cmp.show({ providers = { "lsp" } })

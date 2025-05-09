@@ -47,17 +47,20 @@ return {
 				end,
 			},
 			{
-				"folke/neodev.nvim",
-				config = function()
-					require("neodev").setup()
-				end,
+				"folke/lazydev.nvim",
+				ft = "lua",
+				opts = {
+					library = {
+						-- See the configuration section for more details
+						-- Load luvit types when the `vim.uv` word is found
+						{ path = "${3rd}/luv/library", words = { "vim%.uv" } },
+					},
+				},
 			},
 			{ "saghen/blink.cmp" },
 			{ "yioneko/nvim-vtsls" }
 		},
 		config = function()
-			local lspconfig = require("lspconfig")
-
 			local diagnostic_icons = {
 				Error = "󰅚 ",
 				Warn = "󰀪 ",
@@ -92,6 +95,30 @@ return {
 				},
 			})
 
+			local function eslint_fix_all(opts)
+				local bufnr = opts.bufnr or 0
+
+				local eslint_lsp_client = vim.lsp.get_clients({ bufnr = bufnr, name = 'eslint' })[1]
+
+				if eslint_lsp_client == nil then
+					return
+				end
+
+				local request = function(buf, method, params)
+					eslint_lsp_client.request_sync(method, params, nil, buf)
+				end
+
+				request(0, 'workspace/executeCommand', {
+					command = 'eslint.applyAllFixes',
+					arguments = {
+						{
+							uri = vim.uri_from_bufnr(bufnr),
+							version = vim.lsp.util.buf_versions[bufnr],
+						},
+					},
+				})
+			end
+
 			vim.api.nvim_create_autocmd("LspAttach", {
 				group = vim.api.nvim_create_augroup("MgLspConfig", {}),
 				callback = function(ev)
@@ -117,15 +144,16 @@ return {
 					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
+					vim.keymap.set("n", "<leader>ef", function()
+						eslint_fix_all({ bufnr = opts.buffer })
+					end, { noremap = true })
+
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
-					vim.keymap.set("n", "<leader>ef", "<cmd>EslintFixAll<cr>", { noremap = true })
 
 					vim.api.nvim_create_autocmd("BufWritePre", {
 						group = eslint_group,
 						callback = function()
-							if vim.fn.exists(":EslintFixAll") > 0 then
-								vim.cmd("EslintFixAll")
-							end
+							eslint_fix_all({ bufnr = opts.buffer })
 						end,
 					})
 				end,
@@ -133,87 +161,8 @@ return {
 
 			local capabilities = require("blink.cmp").get_lsp_capabilities()
 
-			require("mason-lspconfig").setup_handlers({
-				function(server_name)
-					lspconfig[server_name].setup({
-						capabilities = capabilities,
-					})
-				end,
-
-				["vtsls"] = function()
-					require("lspconfig.configs").vtsls = require("vtsls").lspconfig
-
-					lspconfig.vtsls.setup({
-						capabilities = capabilities,
-						on_attach = function(client, bufnr)
-							require("twoslash-queries").attach(client, bufnr)
-						end,
-						typescript = {
-							tsserver = {
-								maxTsServerMemory = 12288,
-							},
-						},
-					})
-				end,
-
-				["rust_analyzer"] = function()
-					vim.g.rustaceanvim = {
-						tools = {},
-						server = {
-							default_settings = {
-								["rust-analyzer"] = {},
-							},
-						},
-					}
-				end,
-
-				["lua_ls"] = function()
-					lspconfig["lua_ls"].setup({
-						capabilities = capabilities,
-						settings = {
-							Lua = {
-								completion = {
-									callSnippet = "Replace",
-								},
-							},
-						},
-					})
-				end,
-
-				["pylsp"] = function()
-					lspconfig["pylsp"].setup({
-						capabilities = capabilities,
-						settings = {
-							pylsp = {
-								plugins = {
-									pycodestyle = {
-										ignore = { "E501", "W503" },
-									},
-								},
-							},
-						},
-					})
-				end,
-
-				["eslint"] = function()
-					lspconfig["eslint"].setup({
-						capabilities = capabilities,
-						flags = {
-							allow_incremental_sync = false,
-							debounce_text_changes = 1000,
-						},
-					})
-				end,
-
-				["tailwindcss"] = function()
-					lspconfig["tailwindcss"].setup({
-						capabilities = capabilities,
-						flags = {
-							allow_incremental_sync = false,
-							debounce_text_changes = 1000,
-						},
-					})
-				end,
+			vim.lsp.config("*", {
+				capabilities = capabilities
 			})
 		end,
 	},
