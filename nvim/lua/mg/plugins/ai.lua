@@ -7,7 +7,7 @@ return {
 			require("copilot").setup({
 				suggestion = {
 					enabled = true,
-					auto_trigger = false,
+					auto_trigger = true,
 					trigger_on_accept = true,
 					keymap = {
 						accept = "<C-j>",

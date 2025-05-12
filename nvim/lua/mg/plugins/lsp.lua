@@ -27,26 +27,6 @@ return {
 				opts = {},
 			},
 			{
-				"williamboman/mason-lspconfig.nvim",
-				config = function()
-					---@diagnostic disable-next-line: missing-fields
-					require("mason-lspconfig").setup({
-						ensure_installed = {
-							"astro",
-							"eslint",
-							"jdtls",
-							"lua_ls",
-							"prismals",
-							"pylsp",
-							"rust_analyzer",
-							"tailwindcss",
-							"texlab",
-							"vtsls"
-						},
-					})
-				end,
-			},
-			{
 				"folke/lazydev.nvim",
 				ft = "lua",
 				opts = {
@@ -95,30 +75,6 @@ return {
 				},
 			})
 
-			local function eslint_fix_all(opts)
-				local bufnr = opts.bufnr or 0
-
-				local eslint_lsp_client = vim.lsp.get_clients({ bufnr = bufnr, name = 'eslint' })[1]
-
-				if eslint_lsp_client == nil then
-					return
-				end
-
-				local request = function(buf, method, params)
-					eslint_lsp_client.request_sync(method, params, nil, buf)
-				end
-
-				request(0, 'workspace/executeCommand', {
-					command = 'eslint.applyAllFixes',
-					arguments = {
-						{
-							uri = vim.uri_from_bufnr(bufnr),
-							version = vim.lsp.util.buf_versions[bufnr],
-						},
-					},
-				})
-			end
-
 			vim.api.nvim_create_autocmd("LspAttach", {
 				group = vim.api.nvim_create_augroup("MgLspConfig", {}),
 				callback = function(ev)
@@ -145,7 +101,7 @@ return {
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
 					vim.keymap.set("n", "<leader>ef", function()
-						eslint_fix_all({ bufnr = opts.buffer })
+						vim.cmd("LspEslintFixAll")
 					end, { noremap = true })
 
 					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
@@ -153,7 +109,9 @@ return {
 					vim.api.nvim_create_autocmd("BufWritePre", {
 						group = eslint_group,
 						callback = function()
-							eslint_fix_all({ bufnr = opts.buffer })
+							if vim.fn.exists(":LspEslintFixAll") > 0 then
+								vim.cmd("LspEslintFixAll")
+							end
 						end,
 					})
 				end,
@@ -163,6 +121,25 @@ return {
 
 			vim.lsp.config("*", {
 				capabilities = capabilities
+			})
+
+			vim.lsp.config("eslint", {
+				settings = {
+					run = "onSave",
+				}
+			})
+
+			vim.lsp.enable({
+				"astro",
+				"eslint",
+				"jdtls",
+				"lua_ls",
+				"prismals",
+				"pylsp",
+				"rust_analyzer",
+				"tailwindcss",
+				"texlab",
+				"vtsls"
 			})
 		end,
 	},
