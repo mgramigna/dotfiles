@@ -123,10 +123,10 @@ return {
 				capabilities = capabilities
 			})
 
-			vim.lsp.config("eslint", {
+			vim.lsp.config("vtsls", {
 				settings = {
-					run = "onSave",
-				}
+					maxTsServerMemory = 12288,
+				},
 			})
 
 			vim.lsp.enable({
