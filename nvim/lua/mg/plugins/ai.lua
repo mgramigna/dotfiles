@@ -28,11 +28,24 @@ return {
 			"j-hui/fidget.nvim"
 		},
 		config = function()
-			require("codecompanion").setup({})
+			require("codecompanion").setup({
+				adapters = {
+					copilot = function()
+						return require("codecompanion.adapters").extend("copilot", {
+							schema = {
+								model = {
+									default = "gemini-2.5-pro",
+								},
+							},
+						})
+					end,
+				}
+			})
 			require("mg.config.codecompanion.fidget-spinner"):init()
 
 			vim.keymap.set({ "n", "v" }, "<leader>ca", "<cmd>CodeCompanionActions<cr>", { noremap = true, silent = true })
 			vim.keymap.set({ "n", "v" }, "<leader>cc", "<cmd>CodeCompanionChat Toggle<cr>", { noremap = true, silent = true })
+			vim.keymap.set("v", "ga", "<cmd>CodeCompanionChat add<cr>", { noremap = true, silent = true })
 
 			vim.cmd([[cab cc CodeCompanion]])
 		end
