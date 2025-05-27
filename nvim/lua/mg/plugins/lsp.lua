@@ -123,6 +123,19 @@ return {
 				capabilities = capabilities
 			})
 
+			vim.lsp.config("eslint", {
+				flags = {
+					allow_incremental_sync = false,
+					debounce_text_changes = 1000,
+				},
+			})
+
+			vim.lsp.config("tailwindcss", {
+				flags = {
+					debounce_text_changes = 1000,
+				},
+			})
+
 			vim.lsp.config("vtsls", {
 				settings = {
 					maxTsServerMemory = 12288,

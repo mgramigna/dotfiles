@@ -6,7 +6,7 @@ return {
 		event = "VeryLazy",
 		opts = {},
 	},
-	{ "echasnovski/mini.ai", version = "*", opts = {} },
+	{ "echasnovski/mini.ai",       version = "*", opts = {} },
 	{ "echasnovski/mini.surround", version = "*", opts = {} },
 	{
 		"tpope/vim-commentary",
@@ -49,4 +49,14 @@ return {
 			require("grug-far").setup({})
 		end,
 	},
+	{
+		'forest-nvim/maple.nvim',
+		opts = {
+			keymaps = {
+				toggle = '<leader>mt',
+				close = 'q',
+				switch_mode = 'm',
+			}
+		}
+	}
 }
