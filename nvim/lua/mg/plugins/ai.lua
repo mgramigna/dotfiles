@@ -39,7 +39,12 @@ return {
 							},
 						})
 					end,
-				}
+				},
+				display = {
+					diff = {
+						provider = "mini_diff",
+					},
+				},
 			})
 			require("mg.config.codecompanion.fidget-spinner"):init()
 

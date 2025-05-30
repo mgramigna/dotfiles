@@ -9,6 +9,25 @@ return {
 	{ "echasnovski/mini.ai",       version = "*", opts = {} },
 	{ "echasnovski/mini.surround", version = "*", opts = {} },
 	{
+		'echasnovski/mini.diff',
+		version = "*",
+		opts = {
+			mappings = {
+				goto_prev = '[c',
+				goto_next = ']c',
+			},
+		},
+		keys = {
+			{
+				'<leader>go',
+				function()
+					require('mini.diff').toggle_overlay(0)
+				end,
+				desc = 'Toggle Diff View',
+			},
+		},
+	},
+	{
 		"tpope/vim-commentary",
 		event = "BufReadPre",
 	},
@@ -32,22 +51,7 @@ return {
 				end,
 				desc = "Flash",
 			},
-			{
-				"R",
-				mode = { "o", "x" },
-				function()
-					require("flash").treesitter_search()
-				end,
-				desc = "Flash Treesitter Search",
-			},
 		},
-	},
-	{
-		"magicduck/grug-far.nvim",
-		cmd = "GrugFar",
-		config = function()
-			require("grug-far").setup({})
-		end,
 	},
 	{
 		'forest-nvim/maple.nvim',
