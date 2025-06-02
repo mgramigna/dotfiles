@@ -5,18 +5,6 @@ return {
 		opts = {},
 	},
 	{
-		'akinsho/bufferline.nvim',
-		version = "*",
-		dependencies = 'nvim-tree/nvim-web-devicons',
-		event = "VeryLazy",
-		config = function()
-			require("bufferline").setup({ options = { diagnostics = "nvim_lsp", } })
-
-			vim.keymap.set("n", "<leader>bn", "<cmd>BufferLineCycleNext<cr>")
-			vim.keymap.set("n", "<leader>bp", "<cmd>BufferLineCyclePrev<cr>")
-		end
-	},
-	{
 		"nvim-lualine/lualine.nvim",
 		event = "VeryLazy",
 		config = function()
