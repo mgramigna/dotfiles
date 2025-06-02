@@ -25,7 +25,8 @@ return {
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 			"nvim-treesitter/nvim-treesitter",
-			"j-hui/fidget.nvim"
+			"j-hui/fidget.nvim",
+			"ravitemer/codecompanion-history.nvim"
 		},
 		config = function()
 			require("codecompanion").setup({
@@ -45,12 +46,18 @@ return {
 						provider = "mini_diff",
 					},
 				},
+				extensions = {
+					history = {
+						enabled = true,
+					},
+				},
 			})
 			require("mg.config.codecompanion.fidget-spinner"):init()
 
 			vim.keymap.set({ "n", "v" }, "<leader>ca", "<cmd>CodeCompanionActions<cr>", { noremap = true, silent = true })
 			vim.keymap.set({ "n", "v" }, "<leader>cc", "<cmd>CodeCompanionChat Toggle<cr>", { noremap = true, silent = true })
 			vim.keymap.set("v", "ga", "<cmd>CodeCompanionChat add<cr>", { noremap = true, silent = true })
+			vim.keymap.set("n", "<leader>ch", "<cmd>CodeCompanionHistory<cr>", { noremap = true, silent = true })
 
 			vim.cmd([[cab cc CodeCompanion]])
 		end
