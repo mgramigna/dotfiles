@@ -22,4 +22,8 @@ return {
 			vim.keymap.set("n", "<leader>df", vim.cmd.DiffviewFocusFiles)
 		end,
 	},
+	{
+		'ruifm/gitlinker.nvim',
+		opts = {},
+	}
 }
