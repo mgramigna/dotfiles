@@ -134,6 +134,11 @@ return {
 				flags = {
 					debounce_text_changes = 1000,
 				},
+				settings = {
+					tailwindCSS = {
+						classFunctions = { "cva", "clsx", "cn" },
+					},
+				},
 			})
 
 			vim.lsp.config("vtsls", {
