@@ -165,7 +165,8 @@ return {
 				"rust_analyzer",
 				"tailwindcss",
 				"texlab",
-				"vtsls"
+				"vtsls",
+				"biome"
 			})
 		end,
 	},
