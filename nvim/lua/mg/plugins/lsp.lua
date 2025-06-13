@@ -143,7 +143,15 @@ return {
 
 			vim.lsp.config("vtsls", {
 				settings = {
-					maxTsServerMemory = 12288,
+					vtsls = {
+						autoUseWorkspaceTsdk = true,
+					},
+					typescript = {
+						tsserver = {
+							maxTsServerMemory = 12288,
+							pluginPaths = { './node_modules' }
+						}
+					}
 				},
 			})
 
