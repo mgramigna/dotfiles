@@ -6,24 +6,24 @@ return {
 		event = "VeryLazy",
 		opts = {},
 	},
-	{ "echasnovski/mini.ai",       version = "*", opts = {} },
+	{ "echasnovski/mini.ai", version = "*", opts = {} },
 	{ "echasnovski/mini.surround", version = "*", opts = {} },
 	{
-		'echasnovski/mini.diff',
+		"echasnovski/mini.diff",
 		version = "*",
 		opts = {
 			mappings = {
-				goto_prev = '[c',
-				goto_next = ']c',
+				goto_prev = "[c",
+				goto_next = "]c",
 			},
 		},
 		keys = {
 			{
-				'<leader>go',
+				"<leader>go",
 				function()
-					require('mini.diff').toggle_overlay(0)
+					require("mini.diff").toggle_overlay(0)
 				end,
-				desc = 'Toggle Diff View',
+				desc = "Toggle Diff View",
 			},
 		},
 	},
@@ -54,13 +54,13 @@ return {
 		},
 	},
 	{
-		'forest-nvim/maple.nvim',
+		"forest-nvim/maple.nvim",
 		opts = {
 			keymaps = {
-				toggle = '<leader>mt',
-				close = 'q',
-				switch_mode = 'm',
-			}
-		}
-	}
+				toggle = "<leader>mt",
+				close = "q",
+				switch_mode = "m",
+			},
+		},
+	},
 }

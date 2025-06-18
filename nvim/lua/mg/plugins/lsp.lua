@@ -38,7 +38,7 @@ return {
 				},
 			},
 			{ "saghen/blink.cmp" },
-			{ "yioneko/nvim-vtsls" }
+			{ "yioneko/nvim-vtsls" },
 		},
 		config = function()
 			local diagnostic_icons = {
@@ -120,7 +120,7 @@ return {
 			local capabilities = require("blink.cmp").get_lsp_capabilities()
 
 			vim.lsp.config("*", {
-				capabilities = capabilities
+				capabilities = capabilities,
 			})
 
 			vim.lsp.config("eslint", {
@@ -149,9 +149,9 @@ return {
 					typescript = {
 						tsserver = {
 							maxTsServerMemory = 12288,
-							pluginPaths = { './node_modules' }
-						}
-					}
+							pluginPaths = { "./node_modules" },
+						},
+					},
 				},
 			})
 

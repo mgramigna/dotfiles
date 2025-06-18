@@ -1,13 +1,18 @@
 return {
 	{
-		'echasnovski/mini-git',
-		version = '*',
-		main = 'mini.git',
+		"echasnovski/mini-git",
+		version = "*",
+		main = "mini.git",
 		config = function()
-			require('mini.git').setup()
+			require("mini.git").setup()
 
 			vim.keymap.set("n", "<leader>gb", "<cmd>vert Git blame -- %<cr>", { desc = "Git blame current file" })
-			vim.keymap.set({ 'n', 'x' }, '<leader>gs', '<cmd>lua MiniGit.show_at_cursor()<CR>', { desc = 'Show at cursor' })
+			vim.keymap.set(
+				{ "n", "x" },
+				"<leader>gs",
+				"<cmd>lua MiniGit.show_at_cursor()<CR>",
+				{ desc = "Show at cursor" }
+			)
 			vim.keymap.set("n", "<leader>gc", "<cmd>Git commit<cr>", { desc = "Git commit" })
 		end,
 	},
@@ -24,7 +29,7 @@ return {
 		end,
 	},
 	{
-		'ruifm/gitlinker.nvim',
+		"ruifm/gitlinker.nvim",
 		opts = {},
-	}
+	},
 }
