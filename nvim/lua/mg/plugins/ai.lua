@@ -51,6 +51,38 @@ return {
 						enabled = true,
 					},
 				},
+				prompt_library = {
+					["Summarize git diff"] = {
+						strategy = "chat",
+						description = "Summarize the current git diff",
+						opts = {
+							index = 10,
+							is_default = true,
+							is_slash_cmd = true,
+							short_name = "diff",
+							auto_submit = true,
+						},
+						prompts = {
+							{
+								role = "user",
+								content = function()
+									return string.format(
+										[[Take a look at the following git diff and summarize the changes made. Break it down by each file into a bulleted list.
+
+```diff
+%s
+```
+]],
+										vim.fn.system("git diff --no-ext-diff")
+									)
+								end,
+								opts = {
+									contains_code = true,
+								},
+							},
+						},
+					},
+				}
 			})
 			require("mg.config.codecompanion.fidget-spinner"):init()
 
