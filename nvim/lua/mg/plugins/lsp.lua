@@ -53,9 +53,6 @@ return {
 					source = true,
 					severity_sort = true,
 				},
-				jump = {
-					severity = { min = vim.diagnostic.severity.W },
-				},
 				virtual_text = {
 					severity = { min = vim.diagnostic.severity.HINT },
 				},
