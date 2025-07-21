@@ -43,3 +43,9 @@ vim.api.nvim_create_user_command("Qa", "qa", {})
 -- Better wrapped line navigation
 vim.keymap.set("n", "j", "gj")
 vim.keymap.set("n", "k", "gk")
+
+-- Save and quit shorthand
+vim.keymap.set("n", "<leader>w", "<cmd>w<cr>")
+vim.keymap.set("n", "<leader>q", "<cmd>q<cr>")
+vim.keymap.set("n", "<leader>v", "<cmd>vsp<cr>")
+vim.keymap.set("n", "<leader>x", "<cmd>sp<cr>")

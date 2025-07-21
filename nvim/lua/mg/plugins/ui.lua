@@ -1,6 +1,19 @@
 return {
 	"nvim-tree/nvim-web-devicons",
 	{
+		"echasnovski/mini.notify",
+		version = "*",
+		config = function()
+			require("mini.notify").setup({
+				lsp_progress = {
+					enable = false,
+				},
+			})
+
+			vim.notify = require("mini.notify").make_notify()
+		end,
+	},
+	{
 		"stevearc/dressing.nvim",
 		opts = {},
 	},
@@ -49,12 +62,12 @@ return {
 		event = "FileType qf",
 		config = function()
 			require("quicker").setup({})
-			vim.keymap.set("n", "<leader>q", function()
+			vim.keymap.set("n", "<leader>tq", function()
 				require("quicker").toggle()
 			end, {
 				desc = "Toggle quickfix",
 			})
-			vim.keymap.set("n", "<leader>l", function()
+			vim.keymap.set("n", "<leader>ll", function()
 				require("quicker").toggle({ loclist = true })
 			end, {
 				desc = "Toggle loclist",
