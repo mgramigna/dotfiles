@@ -5,7 +5,6 @@ return {
 	},
 	{
 		"neovim/nvim-lspconfig",
-		event = "BufRead",
 		dependencies = {
 			{
 				"mrcjkb/rustaceanvim",
