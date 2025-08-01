@@ -1,7 +1,6 @@
 return {
 	{
 		"windwp/nvim-ts-autotag",
-		event = "BufReadPre",
 		config = function()
 			---@diagnostic disable-next-line: missing-fields
 			require("nvim-ts-autotag").setup({
@@ -16,7 +15,6 @@ return {
 	},
 	{
 		"JoosepAlviste/nvim-ts-context-commentstring",
-		event = "BufReadPre",
 	},
 	{
 		"nvim-treesitter/nvim-treesitter",

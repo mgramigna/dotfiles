@@ -29,7 +29,6 @@ return {
 	},
 	{
 		"tpope/vim-commentary",
-		event = "BufReadPre",
 	},
 	{ "christoomey/vim-tmux-navigator" },
 	{

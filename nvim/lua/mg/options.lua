@@ -4,6 +4,7 @@ vim.opt.relativenumber = true
 vim.opt.wrap = false
 vim.opt.hlsearch = false
 vim.opt.cmdheight = 0
+vim.opt.winborder = "rounded"
 
 if vim.fn.has("termguicolors") == 1 then
 	vim.opt.termguicolors = true
