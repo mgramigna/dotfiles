@@ -11,17 +11,19 @@ return {
 					indent_blankline = {
 						enabled = true,
 					},
-					cmp = true,
-					gitsigns = true,
+					blink_cmp = {
+						style = "bordered",
+					},
 					treesitter = true,
 					fidget = true,
 					harpoon = true,
 					mason = true,
-					lsp_saga = true,
-					neotree = true,
 					telescope = {
 						enabled = true,
 					},
+					diffview = true,
+					render_markdown = true,
+					dadbod_ui = true,
 				},
 			})
 			vim.cmd.colorscheme("catppuccin")

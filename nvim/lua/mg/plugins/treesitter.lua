@@ -14,9 +14,6 @@ return {
 		end,
 	},
 	{
-		"JoosepAlviste/nvim-ts-context-commentstring",
-	},
-	{
 		"nvim-treesitter/nvim-treesitter",
 		config = function()
 			---@diagnostic disable-next-line: missing-fields
