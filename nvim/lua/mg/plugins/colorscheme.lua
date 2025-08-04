@@ -6,6 +6,10 @@ return {
 		lazy = false,
 		config = function()
 			require("catppuccin").setup({
+				float = {
+					solid = false,
+					transparent = true,
+				},
 				flavour = "macchiato",
 				integrations = {
 					indent_blankline = {
