@@ -12,16 +12,6 @@ return {
 				ft = { "rust" },
 			},
 			{
-				"marilari88/twoslash-queries.nvim",
-				config = function()
-					require("twoslash-queries").setup({
-						multi_line = true,
-					})
-
-					vim.keymap.set("n", "<leader>ti", "<cmd>TwoslashQueriesInspect<cr>", { noremap = true })
-				end,
-			},
-			{
 				"j-hui/fidget.nvim",
 				opts = {},
 			},
@@ -162,7 +152,7 @@ return {
 				"tailwindcss",
 				"texlab",
 				"vtsls",
-				"biome"
+				"biome",
 			})
 		end,
 	},
