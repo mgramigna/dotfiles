@@ -13,7 +13,7 @@ return {
 			},
 			{
 				"j-hui/fidget.nvim",
-				opts = {},
+				-- opts = {},
 			},
 			{
 				"folke/lazydev.nvim",

@@ -36,17 +36,17 @@ return {
 				},
 			})
 
-			vim.keymap.set("n", "<leader>ff", builtin.find_files, { silent = true })
-			vim.keymap.set("n", "<leader>fz", builtin.git_files, { silent = true })
-			vim.keymap.set("n", "<leader>fb", builtin.buffers, { silent = true })
-			vim.keymap.set("n", "<leader>fs", builtin.grep_string, { silent = true })
-			vim.keymap.set("n", "<leader>fx", builtin.spell_suggest, { silent = true })
-			vim.keymap.set("n", "<leader>fh", builtin.help_tags, { silent = true })
-			vim.keymap.set("n", "<leader>fd", builtin.diagnostics, { silent = true })
+			-- vim.keymap.set("n", "<leader>ff", builtin.find_files, { silent = true })
+			-- vim.keymap.set("n", "<leader>fz", builtin.git_files, { silent = true })
+			-- vim.keymap.set("n", "<leader>fb", builtin.buffers, { silent = true })
+			-- vim.keymap.set("n", "<leader>fs", builtin.grep_string, { silent = true })
+			-- vim.keymap.set("n", "<leader>fx", builtin.spell_suggest, { silent = true })
+			-- vim.keymap.set("n", "<leader>fh", builtin.help_tags, { silent = true })
+			-- vim.keymap.set("n", "<leader>fd", builtin.diagnostics, { silent = true })
 
 			telescope.load_extension("fzf")
 
-			require("mg.config.telescope").setup({})
+			-- require("mg.config.telescope").setup({})
 		end,
 	},
 }

@@ -1,19 +1,6 @@
 return {
 	"nvim-tree/nvim-web-devicons",
 	{
-		"echasnovski/mini.notify",
-		version = "*",
-		config = function()
-			require("mini.notify").setup({
-				lsp_progress = {
-					enable = false,
-				},
-			})
-
-			vim.notify = require("mini.notify").make_notify()
-		end,
-	},
-	{
 		"stevearc/dressing.nvim",
 		opts = {},
 	},
