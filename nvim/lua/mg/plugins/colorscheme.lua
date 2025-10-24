@@ -22,9 +22,6 @@ return {
 					fidget = true,
 					harpoon = true,
 					mason = true,
-					telescope = {
-						enabled = true,
-					},
 					diffview = true,
 					render_markdown = true,
 					dadbod_ui = true,

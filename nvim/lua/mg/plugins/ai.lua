@@ -27,20 +27,21 @@ return {
 			"nvim-treesitter/nvim-treesitter",
 			"j-hui/fidget.nvim",
 			"ravitemer/codecompanion-history.nvim",
-			"ravitemer/mcphub.nvim",
 		},
 		config = function()
 			require("codecompanion").setup({
 				adapters = {
-					copilot = function()
-						return require("codecompanion.adapters").extend("copilot", {
-							schema = {
-								model = {
-									default = "gpt-4.1",
+					http = {
+						copilot = function()
+							return require("codecompanion.adapters").extend("copilot", {
+								schema = {
+									model = {
+										default = "gpt-4.1",
+									},
 								},
-							},
-						})
-					end,
+							})
+						end,
+					},
 				},
 				display = {
 					diff = {
@@ -50,14 +51,6 @@ return {
 				extensions = {
 					history = {
 						enabled = true,
-					},
-					mcphub = {
-						callback = "mcphub.extensions.codecompanion",
-						opts = {
-							show_result_in_chat = true,
-							make_vars = true,
-							make_slash_commands = true,
-						},
 					},
 				},
 				prompt_library = {

@@ -72,10 +72,6 @@ return {
 					vim.keymap.set("n", "gt", vim.lsp.buf.type_definition, opts)
 					vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
 
-					vim.keymap.set("n", "gr", function()
-						require("telescope.builtin").lsp_references()
-					end, opts)
-
 					vim.keymap.set("n", "<leader>e", vim.diagnostic.open_float)
 					vim.keymap.set("n", "[g", function()
 						vim.diagnostic.jump({ count = -1, float = true })
