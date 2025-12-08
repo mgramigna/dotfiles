@@ -11,6 +11,8 @@ return {
 		},
 		opts = {},
 		init = function()
+			vim.ui.select = require("mini.pick").ui_select
+
 			vim.keymap.set("n", "<leader>ff", "<cmd>Pick files<CR>", { silent = true })
 			vim.keymap.set("n", "<leader>fb", "<cmd>Pick buffers<CR>", { silent = true })
 			vim.keymap.set("n", "<leader>fs", "<cmd>Pick grep pattern='<cword>'<CR>", { silent = true })

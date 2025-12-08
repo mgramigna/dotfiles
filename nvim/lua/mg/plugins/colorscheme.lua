@@ -18,6 +18,7 @@ return {
 					blink_cmp = {
 						style = "bordered",
 					},
+					blink_pairs = true,
 					treesitter = true,
 					fidget = true,
 					harpoon = true,

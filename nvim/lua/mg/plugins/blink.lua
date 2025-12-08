@@ -47,4 +47,28 @@ return {
 		},
 		opts_extend = { "sources.default" },
 	},
+	{
+		"saghen/blink.pairs",
+		version = "*",
+		dependencies = "saghen/blink.download",
+		opts = {
+			mappings = {
+				enabled = true,
+				cmdline = false,
+				disabled_filetypes = {},
+				pairs = {},
+			},
+			highlights = {
+				enabled = true,
+				matchparen = {
+					enabled = true,
+					cmdline = false,
+					include_surrounding = false,
+					group = "BlinkPairsMatchParen",
+					priority = 250,
+				},
+			},
+			debug = false,
+		},
+	},
 }
