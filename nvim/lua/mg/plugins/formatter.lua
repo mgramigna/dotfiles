@@ -13,11 +13,14 @@ return {
 		},
 	},
 	config = function()
-		local biome_or_prettier = function()
+		local detect_js_formatter = function()
 			local has_biome = vim.fn.filereadable(vim.fn.getcwd() .. "/biome.json") == 1
+			local has_oxfmt = vim.fn.filereadable(vim.fn.getcwd() .. "/.oxfmtrc.json") == 1
 
 			if has_biome then
 				return { "biome" }
+			elseif has_oxfmt then
+				return { "oxfmt" }
 			else
 				return { "prettierd", "prettier", stop_after_first = true }
 			end
@@ -26,11 +29,11 @@ return {
 		require("conform").setup({
 			formatters_by_ft = {
 				lua = { "stylua" },
-				javascript = biome_or_prettier,
-				javascriptreact = biome_or_prettier,
-				typescript = biome_or_prettier,
-				typescriptreact = biome_or_prettier,
-				json = biome_or_prettier,
+				javascript = detect_js_formatter,
+				javascriptreact = detect_js_formatter,
+				typescript = detect_js_formatter,
+				typescriptreact = detect_js_formatter,
+				json = detect_js_formatter,
 				markdown = { "prettierd", "prettier", stop_after_first = true },
 				astro = { "prettier" },
 				rust = { "rustfmt" },
