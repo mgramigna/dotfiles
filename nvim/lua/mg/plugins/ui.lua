@@ -29,17 +29,6 @@ return {
 		},
 	},
 	{
-		"folke/zen-mode.nvim",
-		cmd = "ZenMode",
-		config = function()
-			require("zen-mode").setup({
-				window = {
-					width = 0.66,
-				},
-			})
-		end,
-	},
-	{
 		"stevearc/quicker.nvim",
 		event = "FileType qf",
 		config = function()

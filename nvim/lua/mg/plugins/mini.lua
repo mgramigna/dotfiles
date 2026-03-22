@@ -1,29 +1,5 @@
 return {
 	{
-		"nvim-mini/mini.pick",
-		version = "*",
-		dependencies = {
-			{
-				"nvim-mini/mini.extra",
-				version = "*",
-				opts = {},
-			},
-		},
-		opts = {},
-		init = function()
-			vim.ui.select = require("mini.pick").ui_select
-
-			vim.keymap.set("n", "<leader>ff", "<cmd>Pick files<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fb", "<cmd>Pick buffers<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fs", "<cmd>Pick grep pattern='<cword>'<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fg", "<cmd>Pick grep_live<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fh", "<cmd>Pick help<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fd", "<cmd>Pick diagnostic<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fz", "<cmd>Pick git_files<CR>", { silent = true })
-			vim.keymap.set("n", "<leader>fr", "<cmd>Pick lsp scope='references'<CR>", { silent = true })
-		end,
-	},
-	{
 		"echasnovski/mini.notify",
 		version = "*",
 		config = function()
