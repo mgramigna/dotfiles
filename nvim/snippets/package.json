@@ -4,12 +4,6 @@
     "snippets": [
       {
         "language": [
-          "cqlang"
-        ],
-        "path": "./cql.json"
-      },
-      {
-        "language": [
           "typescript",
           "typescriptreact"
         ],
