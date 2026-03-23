@@ -8,11 +8,6 @@ return {
 			vim.notify = require("mini.notify").make_notify()
 		end,
 	},
-	{
-		"echasnovski/mini.pairs",
-		event = "VeryLazy",
-		opts = {},
-	},
 	{ "echasnovski/mini.ai", version = "*", opts = {} },
 	{ "echasnovski/mini.surround", version = "*", opts = {} },
 	{
