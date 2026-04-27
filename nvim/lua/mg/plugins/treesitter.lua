@@ -15,26 +15,40 @@ return {
 	},
 	{
 		"nvim-treesitter/nvim-treesitter",
-		config = function()
-			---@diagnostic disable-next-line: missing-fields
-			require("nvim-treesitter.configs").setup({
-				ensure_installed = {
-					"javascript",
-					"json",
-					"lua",
-					"tsx",
-					"typescript",
-					"java",
-					"query",
-					"prisma",
-					"rust",
-					"comment",
-					"markdown",
-					"markdown_inline",
-				},
-				highlight = { enable = true, disable = {} },
-				indent = { enable = false, disable = {} },
+		lazy = false,
+		build = ":TSUpdate",
+		branch = "main",
+		init = function()
+			vim.api.nvim_create_autocmd("FileType", {
+				callback = function()
+					pcall(vim.treesitter.start)
+					vim.bo.indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+				end,
 			})
+
+			local ensure_installed = {
+				"javascript",
+				"json",
+				"lua",
+				"tsx",
+				"typescript",
+				"java",
+				"query",
+				"prisma",
+				"rust",
+				"comment",
+				"markdown",
+				"markdown_inline",
+				"graphql",
+			}
+
+			local alreadyInstalled = require("nvim-treesitter.config").get_installed()
+			local parsersToInstall = vim.iter(ensure_installed)
+				:filter(function(parser)
+					return not vim.tbl_contains(alreadyInstalled, parser)
+				end)
+				:totable()
+			require("nvim-treesitter").install(parsersToInstall)
 		end,
 	},
 }
