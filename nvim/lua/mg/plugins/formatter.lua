@@ -34,7 +34,7 @@ return {
 				typescript = detect_js_formatter,
 				typescriptreact = detect_js_formatter,
 				json = detect_js_formatter,
-				markdown = { "prettierd", "prettier", stop_after_first = true },
+				markdown = detect_js_formatter,
 				astro = { "prettier" },
 				rust = { "rustfmt" },
 				python = { "isort", "black" },

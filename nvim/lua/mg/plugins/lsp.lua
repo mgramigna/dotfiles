@@ -82,20 +82,7 @@ return {
 					vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 					vim.keymap.set("n", "<leader>do", vim.lsp.buf.code_action, opts)
 
-					vim.keymap.set("n", "<leader>ef", function()
-						vim.cmd("LspEslintFixAll")
-					end, { noremap = true })
-
-					local eslint_group = vim.api.nvim_create_augroup("EslintFix", { clear = true })
-
-					vim.api.nvim_create_autocmd("BufWritePre", {
-						group = eslint_group,
-						callback = function()
-							if vim.fn.exists(":LspEslintFixAll") > 0 then
-								vim.cmd("LspEslintFixAll")
-							end
-						end,
-					})
+					vim.keymap.set("i", "<C-j>", vim.lsp.inline_completion.get, opts)
 				end,
 			})
 
@@ -129,7 +116,7 @@ return {
 
 			vim.lsp.enable({
 				"astro",
-				"eslint",
+				"copilot_ls",
 				"jdtls",
 				"lua_ls",
 				"prismals",
@@ -138,7 +125,6 @@ return {
 				"tailwindcss",
 				"texlab",
 				"vtsls",
-				"biome",
 				"oxlint",
 			})
 		end,
