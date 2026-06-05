@@ -20,6 +20,20 @@ fi
 sudo apt-get update
 sudo apt-get install -y "${packages[@]}"
 
+remove_if_installed() {
+  local package="$1"
+
+  if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+    sudo apt-get remove -y "$package"
+  fi
+}
+
+# These are intentionally managed outside apt because Ubuntu versions can lag or
+# expose incompatible CLIs for editor integrations.
+remove_if_installed neovim
+remove_if_installed tree-sitter
+remove_if_installed tree-sitter-cli
+
 mkdir -p "$HOME/.local/bin"
 
 # Ubuntu packages these binaries as batcat/fdfind; the dotfiles expect bat/fd.

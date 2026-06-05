@@ -48,7 +48,7 @@ Ubuntu packages are listed in `packages/apt`.
 
 macOS Homebrew packages are listed in `packages/brew` using `brew bundle` format.
 
-`lazygit` is installed through apt on Ubuntu 25.10 and newer, where it is available from the default repositories. Neovim is installed through Bob instead of apt.
+`lazygit` is installed through apt on Ubuntu 25.10 and newer, where it is available from the default repositories. Neovim and Tree-sitter CLI are installed outside apt because Ubuntu versions can lag behind editor integration requirements.
 
 Fast-moving tools or tools with installer-specific behavior are handled in `install/external`, including:
 
@@ -57,6 +57,7 @@ Fast-moving tools or tools with installer-specific behavior are handled in `inst
 - zsh-autosuggestions
 - starship
 - rustup
+- tree-sitter-cli
 - n
 - atuin
 - bob

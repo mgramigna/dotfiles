@@ -48,6 +48,23 @@ install_rustup() {
   rm -f "$tmp"
 }
 
+load_cargo_env() {
+  if [ -s "$HOME/.cargo/env" ]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.cargo/env"
+  fi
+}
+
+install_tree_sitter() {
+  load_cargo_env
+
+  if command -v tree-sitter >/dev/null 2>&1 && tree-sitter --help 2>/dev/null | grep -q 'build'; then
+    return
+  fi
+
+  cargo install tree-sitter-cli
+}
+
 install_n() {
   if command -v n >/dev/null 2>&1; then
     return
@@ -99,6 +116,7 @@ install_zsh_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-synt
 install_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
 install_starship
 install_rustup
+install_tree_sitter
 install_n
 install_atuin
 install_bob

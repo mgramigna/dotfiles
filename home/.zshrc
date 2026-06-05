@@ -40,3 +40,8 @@ if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)
 if [ -s "$HOME/.zshrc.local" ]; then
   source "$HOME/.zshrc.local"
 fi
+
+if [ -s "$HOME/.atuin/bin/env" ]; then
+  . "$HOME/.atuin/bin/env"
+fi
+
