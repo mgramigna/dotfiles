@@ -1,6 +1,7 @@
 export PATH=$HOME/.local/scripts:$PATH
 export PATH=$HOME/.local/bin:$PATH
 export PATH=$HOME/.local/share/bob/nvim-bin:$PATH
+export PATH=$HOME/.opencode/bin:$PATH
 
 export ZSH="$HOME/.oh-my-zsh"
 export FZF_DEFAULT_OPTS=" \
