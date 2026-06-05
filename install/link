@@ -7,6 +7,10 @@ STOW_DIR="$ROOT"
 PACKAGES=(home)
 MACOS_PACKAGES=(macos)
 
+log_step() {
+  printf '==> %s\n' "$1"
+}
+
 if ! command -v stow >/dev/null 2>&1; then
   echo "stow is required. Run ./bootstrap apt first." >&2
   exit 1
@@ -73,6 +77,7 @@ backup_target() {
   backup_path "$target"
 }
 
+log_step "Preparing existing dotfile targets"
 backup_target "$HOME/.zshrc"
 backup_target "$HOME/.config/nvim"
 backup_target "$HOME/.config/opencode/opencode.jsonc"
@@ -80,11 +85,14 @@ backup_target "$HOME/.config/tmux"
 backup_target "$HOME/.config/starship"
 backup_target "$HOME/.local/scripts"
 
+log_step "Stowing home dotfiles"
 stow --dir "$STOW_DIR" --target "$HOME" --restow "${PACKAGES[@]}"
 
 if [ "$(uname -s)" = "Darwin" ]; then
+  log_step "Preparing macOS dotfile targets"
   backup_target "$HOME/.config/ghostty"
   backup_target "$HOME/.config/karabiner"
   backup_target "$HOME/.config/cmux"
+  log_step "Stowing macOS dotfiles"
   stow --dir "$STOW_DIR" --target "$HOME" --restow "${MACOS_PACKAGES[@]}"
 fi

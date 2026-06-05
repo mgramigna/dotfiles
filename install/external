@@ -3,6 +3,10 @@ set -euo pipefail
 
 mkdir -p "$HOME/.local/bin"
 
+log_step() {
+  printf '==> %s\n' "$1"
+}
+
 install_oh_my_zsh() {
   if [ -d "$HOME/.oh-my-zsh" ]; then
     return
@@ -123,13 +127,23 @@ install_tailscale() {
   rm -f "$tmp"
 }
 
+log_step "oh-my-zsh"
 install_oh_my_zsh
+log_step "zsh-syntax-highlighting"
 install_zsh_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting.git
+log_step "zsh-autosuggestions"
 install_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
+log_step "starship"
 install_starship
+log_step "rustup"
 install_rustup
+log_step "tree-sitter-cli"
 install_tree_sitter
+log_step "n and Node.js LTS"
 install_n
+log_step "atuin"
 install_atuin
+log_step "bob and Neovim"
 install_bob
+log_step "tailscale"
 install_tailscale
