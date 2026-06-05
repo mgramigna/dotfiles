@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<'USAGE'
+Usage: ./bootstrap [command]
+
+Commands:
+  all       Install packages, external tools, link dotfiles, then run doctor (default)
+  apt       Install Ubuntu apt packages
+  brew      Install macOS Homebrew packages
+  external  Install tools not managed through apt
+  link      Link dotfiles into $HOME
+  doctor    Print setup status
+USAGE
+}
+
+require_ubuntu() {
+  if [ ! -r /etc/os-release ]; then
+    echo "Cannot detect OS: /etc/os-release is missing" >&2
+    exit 1
+  fi
+
+  . /etc/os-release
+
+  if [ "${ID:-}" != "ubuntu" ]; then
+    echo "This bootstrap currently supports Ubuntu only. Detected: ${ID:-unknown}" >&2
+    exit 1
+  fi
+}
+
+main() {
+  local command="${1:-all}"
+
+  case "$command" in
+    all)
+      require_ubuntu
+      "$ROOT/install/apt"
+      "$ROOT/install/external"
+      "$ROOT/install/link"
+      "$ROOT/install/doctor"
+      ;;
+    apt|external|link|doctor)
+      if [ "$command" != "doctor" ] && [ "$command" != "link" ]; then
+        require_ubuntu
+      fi
+      "$ROOT/install/$command"
+      ;;
+    brew)
+      "$ROOT/install/brew"
+      ;;
+    -h|--help|help)
+      usage
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

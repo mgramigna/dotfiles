@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PACKAGES_FILE="$ROOT/packages/apt"
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "apt-get is required for Ubuntu package installation" >&2
+  exit 1
+fi
+
+mapfile -t packages < <(grep -Ev '^($|#)' "$PACKAGES_FILE")
+
+. /etc/os-release
+
+if [ "${ID:-}" = "ubuntu" ] && dpkg --compare-versions "${VERSION_ID:-0}" ge "25.10"; then
+  packages+=(lazygit)
+fi
+
+sudo apt-get update
+sudo apt-get install -y "${packages[@]}"
+
+mkdir -p "$HOME/.local/bin"
+
+# Ubuntu packages these binaries as batcat/fdfind; the dotfiles expect bat/fd.
+if command -v batcat >/dev/null 2>&1 && [ ! -e "$HOME/.local/bin/bat" ]; then
+  ln -s "$(command -v batcat)" "$HOME/.local/bin/bat"
+fi
+
+if command -v fdfind >/dev/null 2>&1 && [ ! -e "$HOME/.local/bin/fd" ]; then
+  ln -s "$(command -v fdfind)" "$HOME/.local/bin/fd"
+fi

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+check_command() {
+  local name="$1"
+  local command_name="${2:-$1}"
+
+  if command -v "$command_name" >/dev/null 2>&1; then
+    printf '%-24s ok\n' "$name"
+  else
+    printf '%-24s missing\n' "$name"
+  fi
+}
+
+resolve_link() {
+  local link_path="$1"
+  local link_target
+  link_target="$(readlink "$link_path")"
+
+  case "$link_target" in
+    /*)
+      printf '%s\n' "$link_target"
+      ;;
+    *)
+      local link_dir target_dir target_name
+      link_dir="$(dirname "$link_path")"
+      target_dir="$(dirname "$link_target")"
+      target_name="$(basename "$link_target")"
+      printf '%s/%s\n' "$(cd "$link_dir/$target_dir" && pwd -P)" "$target_name"
+      ;;
+  esac
+}
+
+check_link() {
+  local name="$1"
+  local target="$2"
+  local expected="$3"
+
+  if [ -L "$target" ] && [ "$(resolve_link "$target")" = "$expected" ]; then
+    printf '%-24s linked\n' "$name"
+  elif [ -e "$target" ] || [ -L "$target" ]; then
+    printf '%-24s exists, not linked\n' "$name"
+  else
+    printf '%-24s missing\n' "$name"
+  fi
+}
+
+echo "Commands"
+check_command git
+check_command curl
+check_command stow
+check_command rg
+check_command fd
+check_command fzf
+check_command tmux
+check_command nvim
+check_command zsh
+check_command starship
+check_command zoxide
+check_command atuin
+check_command bat
+check_command lazygit
+check_command rustup
+check_command n
+
+echo
+echo "Links"
+check_link .zshrc "$HOME/.zshrc" "$ROOT/home/.zshrc"
+check_link nvim "$HOME/.config/nvim" "$ROOT/home/.config/nvim"
+check_link tmux "$HOME/.config/tmux" "$ROOT/home/.config/tmux"
+check_link starship "$HOME/.config/starship" "$ROOT/home/.config/starship"
+check_link scripts "$HOME/.local/scripts" "$ROOT/home/.local/scripts"
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  check_link ghostty "$HOME/.config/ghostty" "$ROOT/macos/.config/ghostty"
+  check_link karabiner "$HOME/.config/karabiner" "$ROOT/macos/.config/karabiner"
+  check_link cmux "$HOME/.config/cmux" "$ROOT/macos/.config/cmux"
+fi

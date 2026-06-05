@@ -1,5 +1,4 @@
 backups/*-backup-*
-tmux/plugins
-scripts/on-demand-translation
-scripts/addVs.js
-karabiner/automatic_backups
+home/.zshrc.local
+home/.config/tmux/plugins
+macos/.config/karabiner/automatic_backups

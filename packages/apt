@@ -1,0 +1,17 @@
+bat
+build-essential
+ca-certificates
+curl
+fd-find
+fzf
+git
+jq
+neovim
+ripgrep
+shellcheck
+stow
+tmux
+tree
+unzip
+zoxide
+zsh
