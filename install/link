@@ -42,7 +42,7 @@ backup_target() {
   local target="$1"
 
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-    return
+    return 0
   fi
 
   if [ -L "$target" ]; then
@@ -54,17 +54,17 @@ backup_target() {
       case "$raw_link_target" in
         "$ROOT"/*|*code/dotfiles*)
           rm "$target"
-          return
+          return 0
           ;;
       esac
     else
       case "$link_target" in
         "$ROOT/home"/*|"$ROOT/macos"/*)
-          return
+          return 0
           ;;
         "$ROOT"/*)
           rm "$target"
-          return
+          return 0
           ;;
       esac
     fi
@@ -75,6 +75,7 @@ backup_target() {
 
 backup_target "$HOME/.zshrc"
 backup_target "$HOME/.config/nvim"
+backup_target "$HOME/.config/opencode/opencode.jsonc"
 backup_target "$HOME/.config/tmux"
 backup_target "$HOME/.config/starship"
 backup_target "$HOME/.local/scripts"

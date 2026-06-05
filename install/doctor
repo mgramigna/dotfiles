@@ -72,6 +72,7 @@ echo
 echo "Links"
 check_link .zshrc "$HOME/.zshrc" "$ROOT/home/.zshrc"
 check_link nvim "$HOME/.config/nvim" "$ROOT/home/.config/nvim"
+check_link opencode "$HOME/.config/opencode/opencode.jsonc" "$ROOT/home/.config/opencode/opencode.jsonc"
 check_link tmux "$HOME/.config/tmux" "$ROOT/home/.config/tmux"
 check_link starship "$HOME/.config/starship" "$ROOT/home/.config/starship"
 check_link scripts "$HOME/.local/scripts" "$ROOT/home/.local/scripts"

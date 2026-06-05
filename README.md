@@ -70,6 +70,7 @@ Dotfiles are organized as top-level Stow packages:
 ```text
 home/.zshrc
 home/.config/nvim
+home/.config/opencode
 home/.config/tmux
 home/.config/starship
 home/.local/scripts
@@ -87,6 +88,7 @@ The default Ubuntu setup links:
 
 - `~/.zshrc`
 - `~/.config/nvim`
+- `~/.config/opencode`
 - `~/.config/tmux`
 - `~/.config/starship`
 - `~/.local/scripts`
