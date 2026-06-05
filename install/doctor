@@ -66,6 +66,8 @@ check_command lazygit
 check_command rustup
 check_command tree-sitter
 check_command n
+check_command node
+check_command npm
 check_command tailscale
 
 echo

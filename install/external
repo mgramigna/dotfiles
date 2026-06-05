@@ -66,12 +66,24 @@ install_tree_sitter() {
 }
 
 install_n() {
+  local owner
+  owner="$(id -un)"
+
+  sudo mkdir -p /usr/local/n
+  sudo chown -R "$owner" /usr/local/n
+
+  sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/include /usr/local/share
+  sudo chown -R "$owner" /usr/local/bin /usr/local/lib /usr/local/include /usr/local/share
+
   if command -v n >/dev/null 2>&1; then
+    n lts
     return
   fi
 
-  curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o "$HOME/.local/bin/n"
-  chmod +x "$HOME/.local/bin/n"
+  tmp="$(mktemp)"
+  curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o "$tmp"
+  sudo bash "$tmp" install lts
+  rm -f "$tmp"
 }
 
 install_atuin() {
