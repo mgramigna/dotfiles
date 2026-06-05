@@ -17,10 +17,10 @@ return {
 			local has_biome = vim.fn.filereadable(vim.fn.getcwd() .. "/biome.json") == 1
 			local has_oxfmt = vim.fn.filereadable(vim.fn.getcwd() .. "/.oxfmtrc.json") == 1
 
-			if has_biome then
-				return { "biome" }
-			elseif has_oxfmt then
+			if has_oxfmt then
 				return { "oxfmt" }
+			elseif has_biome then
+				return { "biome" }
 			else
 				return { "prettierd", "prettier", stop_after_first = true }
 			end
