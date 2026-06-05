@@ -1,0 +1,6 @@
+# Machine-specific zsh configuration. Copy relevant parts to ~/.zshrc.local.
+# Do not put secrets in this repository.
+
+# export JAVA_HOME="$HOME/path/to/jdk"
+# export PATH="$HOME/.local/tool/bin:$PATH"
+# export API_TOKEN="..."

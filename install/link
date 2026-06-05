@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKUP_DIR="$HOME/.local/state/dotfiles/backups/$(date +%Y%m%d%H%M%S)"
+STOW_DIR="$ROOT"
+PACKAGES=(home)
+MACOS_PACKAGES=(macos)
+
+if ! command -v stow >/dev/null 2>&1; then
+  echo "stow is required. Run ./bootstrap apt first." >&2
+  exit 1
+fi
+
+backup_path() {
+  local path="$1"
+  mkdir -p "$BACKUP_DIR"
+  mv "$path" "$BACKUP_DIR/$(basename "$path")"
+  echo "Backed up $path to $BACKUP_DIR/$(basename "$path")"
+}
+
+resolve_link() {
+  local link_path="$1"
+  local link_target
+  link_target="$(readlink "$link_path")"
+
+  case "$link_target" in
+    /*)
+      printf '%s\n' "$link_target"
+      ;;
+    *)
+      local link_dir target_dir target_name
+      link_dir="$(dirname "$link_path")"
+      target_dir="$(dirname "$link_target")"
+      target_name="$(basename "$link_target")"
+      printf '%s/%s\n' "$(cd "$link_dir/$target_dir" && pwd -P)" "$target_name"
+      ;;
+  esac
+}
+
+backup_target() {
+  local target="$1"
+
+  if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+    return
+  fi
+
+  if [ -L "$target" ]; then
+    local link_target raw_link_target
+    link_target=""
+    raw_link_target="$(readlink "$target")"
+
+    if ! link_target="$(resolve_link "$target" 2>/dev/null)"; then
+      case "$raw_link_target" in
+        "$ROOT"/*|*code/dotfiles*)
+          rm "$target"
+          return
+          ;;
+      esac
+    else
+      case "$link_target" in
+        "$ROOT/home"/*|"$ROOT/macos"/*)
+          return
+          ;;
+        "$ROOT"/*)
+          rm "$target"
+          return
+          ;;
+      esac
+    fi
+  fi
+
+  backup_path "$target"
+}
+
+backup_target "$HOME/.zshrc"
+backup_target "$HOME/.config/nvim"
+backup_target "$HOME/.config/tmux"
+backup_target "$HOME/.config/starship"
+backup_target "$HOME/.local/scripts"
+
+stow --dir "$STOW_DIR" --target "$HOME" --restow "${PACKAGES[@]}"
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  backup_target "$HOME/.config/ghostty"
+  backup_target "$HOME/.config/karabiner"
+  backup_target "$HOME/.config/cmux"
+  stow --dir "$STOW_DIR" --target "$HOME" --restow "${MACOS_PACKAGES[@]}"
+fi
