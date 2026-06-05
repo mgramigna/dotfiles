@@ -59,6 +59,7 @@ Fast-moving tools or tools with installer-specific behavior are handled in `inst
 - rustup
 - n
 - atuin
+- tailscale
 
 ## Linked Dotfiles
 

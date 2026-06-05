@@ -64,6 +64,7 @@ check_command bat
 check_command lazygit
 check_command rustup
 check_command n
+check_command tailscale
 
 echo
 echo "Links"

@@ -1,5 +1,4 @@
 tap "manaflow-ai/cmux"
-tap "planetscale/tap"
 
 brew "atuin"
 brew "awscli"

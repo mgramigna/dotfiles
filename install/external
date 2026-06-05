@@ -68,6 +68,17 @@ install_atuin() {
   rm -f "$tmp"
 }
 
+install_tailscale() {
+  if command -v tailscale >/dev/null 2>&1; then
+    return
+  fi
+
+  tmp="$(mktemp)"
+  curl -fsSL https://tailscale.com/install.sh -o "$tmp"
+  sh "$tmp"
+  rm -f "$tmp"
+}
+
 install_oh_my_zsh
 install_zsh_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting.git
 install_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
@@ -75,3 +86,4 @@ install_starship
 install_rustup
 install_n
 install_atuin
+install_tailscale
