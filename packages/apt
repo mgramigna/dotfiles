@@ -11,6 +11,7 @@ shellcheck
 stow
 tmux
 tree
+tree-sitter-cli
 unzip
 zoxide
 zsh
