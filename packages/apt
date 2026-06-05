@@ -6,7 +6,6 @@ fd-find
 fzf
 git
 jq
-neovim
 ripgrep
 shellcheck
 stow

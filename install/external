@@ -68,6 +68,21 @@ install_atuin() {
   rm -f "$tmp"
 }
 
+install_bob() {
+  export PATH="$HOME/.local/share/bob/nvim-bin:$HOME/.local/bin:$PATH"
+
+  if ! command -v bob >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    curl -fsSL https://raw.githubusercontent.com/MordechaiHadad/bob/master/scripts/install.sh -o "$tmp"
+    bash "$tmp"
+    rm -f "$tmp"
+  fi
+
+  if ! command -v nvim >/dev/null 2>&1; then
+    bob use stable
+  fi
+}
+
 install_tailscale() {
   if command -v tailscale >/dev/null 2>&1; then
     return
@@ -86,4 +101,5 @@ install_starship
 install_rustup
 install_n
 install_atuin
+install_bob
 install_tailscale

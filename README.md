@@ -48,7 +48,7 @@ Ubuntu packages are listed in `packages/apt`.
 
 macOS Homebrew packages are listed in `packages/brew` using `brew bundle` format.
 
-`lazygit` is installed through apt on Ubuntu 25.10 and newer, where it is available from the default repositories.
+`lazygit` is installed through apt on Ubuntu 25.10 and newer, where it is available from the default repositories. Neovim is installed through Bob instead of apt.
 
 Fast-moving tools or tools with installer-specific behavior are handled in `install/external`, including:
 
@@ -59,6 +59,7 @@ Fast-moving tools or tools with installer-specific behavior are handled in `inst
 - rustup
 - n
 - atuin
+- bob
 - tailscale
 
 ## Linked Dotfiles

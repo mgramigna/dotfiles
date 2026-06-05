@@ -55,6 +55,7 @@ check_command rg
 check_command fd
 check_command fzf
 check_command tmux
+check_command bob
 check_command nvim
 check_command zsh
 check_command starship
