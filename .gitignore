@@ -2,3 +2,11 @@ backups/*-backup-*
 home/.zshrc.local
 home/.config/tmux/plugins
 macos/.config/karabiner/automatic_backups
+
+# Pi local state / secrets
+home/.pi/agent/auth.json
+home/.pi/agent/sessions/
+home/.pi/agent/bin/
+home/.pi/agent/npm/node_modules/
+home/.pi/agent/references.json
+home/.pi/agent/trust.json

@@ -1,0 +1,304 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+
+const execFileAsync = promisify(execFile);
+
+interface PrView {
+	number: number;
+	title: string;
+	url: string;
+}
+
+interface ReviewThreadComment {
+	author?: {
+		login?: string;
+	};
+	body?: string;
+	path?: string;
+	line?: number;
+	url?: string;
+	createdAt?: string;
+}
+
+interface ReviewThreadNode {
+	isResolved?: boolean;
+	path?: string;
+	line?: number;
+	comments?: {
+		nodes?: ReviewThreadComment[];
+	};
+}
+
+interface GraphQlResponse<T> {
+	data?: T;
+}
+
+interface ReviewThreadsData {
+	repository?: {
+		pullRequest?: {
+			reviewThreads?: {
+				nodes?: ReviewThreadNode[];
+			};
+		};
+	};
+}
+
+interface PrComment {
+	id: string;
+	author: string;
+	body: string;
+	path?: string;
+	line?: number;
+	url?: string;
+	createdAt?: string;
+	resolved?: boolean;
+}
+
+async function exec(args: string[], cwd: string): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync(args[0]!, args.slice(1), {
+			cwd,
+			maxBuffer: 10 * 1024 * 1024,
+			timeout: 30_000,
+		});
+		return stdout.trim();
+	} catch {
+		return null;
+	}
+}
+
+async function getGitRoot(cwd: string): Promise<string | null> {
+	return exec(["git", "rev-parse", "--show-toplevel"], cwd);
+}
+
+async function ghJson<T>(args: string[], cwd: string): Promise<T | null> {
+	const stdout = await exec(["gh", ...args], cwd);
+	if (!stdout) return null;
+
+	try {
+		return JSON.parse(stdout) as T;
+	} catch {
+		return null;
+	}
+}
+
+function truncate(text: string, maxLength: number): string {
+	const compact = text.replace(/\s+/g, " ").trim();
+	return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
+}
+
+function optionLabel(comment: PrComment, selected: boolean, index: number): string {
+	const mark = selected ? "☑" : "☐";
+	const location = comment.path
+		? ` ${comment.path}${comment.line ? `:${comment.line}` : ""}`
+		: "";
+	const resolved = comment.resolved ? " resolved" : "";
+	return `${mark} ${index + 1}. @${comment.author}${location}${resolved} — ${truncate(comment.body, 90)}`;
+}
+
+function commentPrompt(comment: PrComment, index: number): string {
+	const location = comment.path
+		? `\nFile: ${comment.path}${comment.line ? `:${comment.line}` : ""}`
+		: "";
+	const url = comment.url ? `\nURL: ${comment.url}` : "";
+	const resolved = comment.resolved === undefined ? "" : `\nResolved: ${comment.resolved ? "yes" : "no"}`;
+	return `Comment ${index + 1}\nAuthor: @${comment.author}${location}${url}${resolved}\n\n${comment.body}`;
+}
+
+async function getCurrentPr(cwd: string): Promise<PrView | null> {
+	return ghJson<PrView>(["pr", "view", "--json", "number,title,url"], cwd);
+}
+
+async function getOwnerAndRepo(cwd: string): Promise<{ owner: string; repo: string } | null> {
+	const repo = await exec(["gh", "repo", "view", "--json", "owner,name", "--jq", ".owner.login + \"/\" + .name"], cwd);
+	if (!repo?.includes("/")) return null;
+	const [owner, name] = repo.split("/", 2);
+	return owner && name ? { owner, repo: name } : null;
+}
+
+async function getReviewThreadComments(cwd: string, prNumber: number): Promise<PrComment[]> {
+	const repo = await getOwnerAndRepo(cwd);
+	if (!repo) return [];
+
+	const query = `
+		query($owner: String!, $repo: String!, $number: Int!) {
+			repository(owner: $owner, name: $repo) {
+				pullRequest(number: $number) {
+					reviewThreads(first: 100) {
+						nodes {
+							isResolved
+							path
+							line
+							comments(first: 20) {
+								nodes {
+									author { login }
+									body
+									path
+									line
+									url
+									createdAt
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	`;
+
+	const response = await ghJson<GraphQlResponse<ReviewThreadsData>>(
+		[
+			"api",
+			"graphql",
+			"-f",
+			`query=${query}`,
+			"-F",
+			`owner=${repo.owner}`,
+			"-F",
+			`repo=${repo.repo}`,
+			"-F",
+			`number=${prNumber}`,
+		],
+		cwd,
+	);
+
+	const threads = response?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+	return threads.flatMap((thread, threadIndex) => {
+		const comments = thread.comments?.nodes ?? [];
+		return comments.map((comment, commentIndex) => ({
+			id: `${threadIndex}:${commentIndex}:${comment.url ?? comment.createdAt ?? comment.body ?? ""}`,
+			author: comment.author?.login ?? "unknown",
+			body: comment.body ?? "",
+			path: comment.path ?? thread.path,
+			line: comment.line ?? thread.line,
+			url: comment.url,
+			createdAt: comment.createdAt,
+			resolved: thread.isResolved,
+		}));
+	});
+}
+
+async function chooseComments(ctx: ExtensionCommandContext, comments: PrComment[]): Promise<PrComment[]> {
+	const selected = new Set<string>();
+	const resolvedCount = comments.filter((comment) => comment.resolved).length;
+	const unresolvedCount = comments.length - resolvedCount;
+
+	const result = await ctx.ui.custom<PrComment[] | null>((tui, theme, keybindings, done) => {
+		let showResolved = false;
+		let selectedIndex = 2;
+
+		const visibleComments = () => (showResolved ? comments : comments.filter((comment) => !comment.resolved));
+		const itemCount = () => visibleComments().length + 2;
+		const clampSelectedIndex = () => {
+			selectedIndex = Math.max(0, Math.min(selectedIndex, Math.max(0, itemCount() - 1)));
+		};
+		const toggleComment = (comment: PrComment) => {
+			if (selected.has(comment.id)) selected.delete(comment.id);
+			else selected.add(comment.id);
+		};
+
+		return {
+			render: (width) => {
+				clampSelectedIndex();
+				const visible = visibleComments();
+				const title = `Select PR comments to address (${unresolvedCount} unresolved, ${resolvedCount} resolved)`;
+				const toggleResolvedLabel = showResolved
+					? `Hide resolved comments (${resolvedCount})`
+					: `Show resolved comments (${resolvedCount})`;
+				const labels = [
+					selected.size === 0 ? "Done (select none)" : `Done (${selected.size} selected)`,
+					toggleResolvedLabel,
+					...visible.map((comment, index) => optionLabel(comment, selected.has(comment.id), index)),
+				];
+				const maxVisible = 14;
+				const startIndex = Math.max(
+					0,
+					Math.min(selectedIndex - Math.floor(maxVisible / 2), labels.length - maxVisible),
+				);
+				const endIndex = Math.min(startIndex + maxVisible, labels.length);
+				const lines = [theme.fg("accent", theme.bold(title))];
+
+				for (let index = startIndex; index < endIndex; index++) {
+					const prefix = index === selectedIndex ? "→ " : "  ";
+					const text = truncateToWidth(`${prefix}${labels[index] ?? ""}`, width - 2, "");
+					lines.push(index === selectedIndex ? theme.fg("accent", text) : text);
+				}
+
+				if (startIndex > 0 || endIndex < labels.length) {
+					lines.push(theme.fg("dim", `  (${selectedIndex + 1}/${labels.length})`));
+				}
+
+				lines.push(theme.fg("dim", "↑↓ navigate • enter toggles/moves next • done to start • esc cancel"));
+				return lines;
+			},
+			invalidate: () => {},
+			handleInput: (data) => {
+				if (keybindings.matches(data, "tui.select.up")) {
+					selectedIndex = selectedIndex === 0 ? itemCount() - 1 : selectedIndex - 1;
+				} else if (keybindings.matches(data, "tui.select.down")) {
+					selectedIndex = selectedIndex === itemCount() - 1 ? 0 : selectedIndex + 1;
+				} else if (keybindings.matches(data, "tui.select.confirm")) {
+					if (selectedIndex === 0) {
+						done(comments.filter((comment) => selected.has(comment.id)));
+						return;
+					}
+					if (selectedIndex === 1) {
+						showResolved = !showResolved;
+						clampSelectedIndex();
+					} else {
+						const comment = visibleComments()[selectedIndex - 2];
+						if (comment) toggleComment(comment);
+						selectedIndex = selectedIndex === itemCount() - 1 ? 0 : selectedIndex + 1;
+					}
+				} else if (keybindings.matches(data, "tui.select.cancel")) {
+					done(null);
+				}
+				tui.requestRender();
+			},
+		};
+	});
+
+	return result ?? [];
+}
+
+export default function (pi: ExtensionAPI) {
+	pi.registerCommand("pr-comments", {
+		description: "Select GitHub PR review comments and ask pi to address them",
+		handler: async (_args, ctx) => {
+			const gitRoot = await getGitRoot(ctx.cwd);
+			if (!gitRoot) {
+				ctx.ui.notify("Not inside a git repository", "error");
+				return;
+			}
+
+			const pr = await getCurrentPr(gitRoot);
+			if (!pr) {
+				ctx.ui.notify("No GitHub PR found for the current branch", "error");
+				return;
+			}
+
+			const comments = await getReviewThreadComments(gitRoot, pr.number);
+			if (comments.length === 0) {
+				ctx.ui.notify(`No review comments found on PR #${pr.number}`, "info");
+				return;
+			}
+
+			const selected = await chooseComments(ctx, comments);
+			if (selected.length === 0) {
+				ctx.ui.notify("No PR comments selected", "info");
+				return;
+			}
+
+			const prompt = [
+				`Address this PR comment${selected.length === 1 ? "" : "s"} on ${pr.url}.`,
+				"Resolve the requested feedback in the codebase, then summarize what changed.",
+				...selected.map(commentPrompt),
+			].join("\n\n---\n\n");
+
+			pi.sendUserMessage(prompt);
+		},
+	});
+}

@@ -73,6 +73,7 @@ home/.config/nvim
 home/.config/opencode
 home/.config/tmux
 home/.config/starship
+home/.pi/agent
 home/.local/scripts
 ```
 
@@ -91,6 +92,7 @@ The default Ubuntu setup links:
 - `~/.config/opencode`
 - `~/.config/tmux`
 - `~/.config/starship`
+- `~/.pi/agent`
 - `~/.local/scripts`
 
 On macOS, `./bootstrap link` also links Ghostty, Karabiner, and cmux configs.

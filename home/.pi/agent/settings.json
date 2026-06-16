@@ -1,0 +1,10 @@
+{
+  "lastChangelogVersion": "0.79.5",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "low",
+  "theme": "catppuccin-macchiato",
+  "packages": [
+    "npm:@ff-labs/pi-fff"
+  ]
+}
