@@ -7,16 +7,46 @@ const execFileAsync = promisify(execFile);
 const STATUS_KEY = "gh-pr";
 const REFRESH_INTERVAL_MS = 60_000;
 
-type CheckState = "PASS" | "FAIL" | "PENDING" | "SKIP" | "CANCEL" | "";
+type CheckState =
+	| "PASS"
+	| "FAIL"
+	| "PENDING"
+	| "SKIP"
+	| "CANCEL"
+	| "SUCCESS"
+	| "FAILURE"
+	| "CANCELLED"
+	| "TIMED_OUT"
+	| "ACTION_REQUIRED"
+	| "NEUTRAL"
+	| "SKIPPED"
+	| "STARTUP_FAILURE"
+	| "STALE"
+	| "QUEUED"
+	| "IN_PROGRESS"
+	| "WAITING"
+	| "REQUESTED"
+	| "";
 
 interface PrView {
 	number: number;
 	url: string;
+	headRefOid?: string;
 }
 
 interface PrCheck {
 	name?: string;
 	state?: CheckState;
+}
+
+interface WorkflowRun {
+	databaseId: number;
+	name?: string;
+	workflowName?: string;
+	displayTitle?: string;
+	status?: string;
+	conclusion?: string;
+	url?: string;
 }
 
 async function exec(args: string[], cwd: string): Promise<string | null> {
@@ -51,6 +81,16 @@ function osc8(text: string, url: string): string {
 	return `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
 }
 
+function formatRun(run: WorkflowRun): string {
+	const title = run.workflowName || run.name || run.displayTitle || `run ${run.databaseId}`;
+	const suffix = run.conclusion ? ` (${run.conclusion})` : "";
+	return `${title}${suffix}`;
+}
+
+function isFailedRun(run: WorkflowRun): boolean {
+	return ["failure", "cancelled", "timed_out", "action_required"].includes(run.conclusion ?? "");
+}
+
 function summarizeChecks(checks: PrCheck[] | null): string {
 	if (!checks) return "checks ?";
 
@@ -58,13 +98,93 @@ function summarizeChecks(checks: PrCheck[] | null): string {
 
 	if (total === 0) return "checks none";
 
-	const passed = checks.filter((check) => check.state === "PASS" || check.state === "SKIP").length;
-	const failed = checks.filter((check) => check.state === "FAIL" || check.state === "CANCEL").length;
+	const passedStates = new Set<CheckState>(["PASS", "SKIP", "SUCCESS", "NEUTRAL", "SKIPPED"]);
+	const failedStates = new Set<CheckState>([
+		"FAIL",
+		"CANCEL",
+		"FAILURE",
+		"CANCELLED",
+		"TIMED_OUT",
+		"ACTION_REQUIRED",
+		"STARTUP_FAILURE",
+		"STALE",
+	]);
+
+	const passed = checks.filter((check) => passedStates.has(check.state ?? "")).length;
+	const failed = checks.filter((check) => failedStates.has(check.state ?? "")).length;
 	const pending = Math.max(0, total - passed - failed);
 
 	if (failed > 0) return `${passed}/${total} ✓ ${failed} ✗`;
 	if (pending > 0) return `${passed}/${total} ✓ ${pending} …`;
 	return `${passed}/${total} ✓`;
+}
+
+async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
+	const gitRoot = await getGitRoot(ctx.cwd);
+	if (!gitRoot) {
+		ctx.ui.notify("Not in a git repository", "warning");
+		return;
+	}
+
+	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,headRefOid"], gitRoot);
+	if (!pr?.headRefOid) {
+		ctx.ui.notify("No current GitHub PR found", "warning");
+		return;
+	}
+
+	const runs = await ghJson<WorkflowRun[]>(
+		[
+			"run",
+			"list",
+			"--commit",
+			pr.headRefOid,
+			"--json",
+			"databaseId,name,workflowName,displayTitle,status,conclusion,url",
+		],
+		gitRoot,
+	);
+	const failedRuns = (runs ?? []).filter(isFailedRun);
+
+	if (failedRuns.length === 0) {
+		ctx.ui.notify("No failed GitHub Actions runs found for this PR", "success");
+		return;
+	}
+
+	const choices = [
+		`Re-run failed jobs in all ${failedRuns.length} failed runs`,
+		...failedRuns.map((run) => `Re-run failed jobs: ${formatRun(run)}`),
+		"Cancel",
+	];
+	const choice = await ctx.ui.select("GitHub Actions rerun", choices);
+	if (!choice || choice === "Cancel") return;
+
+	const selectedRuns = choice === choices[0]
+		? failedRuns
+		: [failedRuns[choices.indexOf(choice) - 1]!];
+
+	let rerunCount = 0;
+	const failures: string[] = [];
+	for (const run of selectedRuns) {
+		const result = await exec(["gh", "run", "rerun", String(run.databaseId), "--failed"], gitRoot);
+		if (result === null) {
+			failures.push(formatRun(run));
+		} else {
+			rerunCount += 1;
+		}
+	}
+
+	if (failures.length > 0) {
+		ctx.ui.notify(
+			`Re-ran ${rerunCount}; failed to rerun: ${failures.join(", ")}`,
+			"warning",
+		);
+		return;
+	}
+
+	ctx.ui.notify(
+		`Triggered rerun of failed jobs in ${rerunCount} GitHub Actions run${rerunCount === 1 ? "" : "s"}`,
+		"success",
+	);
 }
 
 async function refresh(ctx: ExtensionContext): Promise<void> {
@@ -123,9 +243,23 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("pr-status", {
 		description: "Refresh the GitHub PR/checks statusline item",
-		handler: async (_args, ctx) => {
+		handler: async (args, ctx) => {
+			if (["rerun", "rerun-failed", "retry"].includes(args.trim())) {
+				await rerunFailedChecks(ctx);
+				await refreshSafely(ctx);
+				return;
+			}
+
 			await refreshSafely(ctx);
 			ctx.ui.notify("GitHub PR status refreshed", "info");
+		},
+	});
+
+	pi.registerCommand("pr-rerun-failed", {
+		description: "Re-run failed GitHub Actions checks for the current PR",
+		handler: async (_args, ctx) => {
+			await rerunFailedChecks(ctx);
+			await refreshSafely(ctx);
 		},
 	});
 

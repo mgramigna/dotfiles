@@ -113,7 +113,7 @@ export default function (pi: ExtensionAPI) {
 
 		const matches = matchingReferences(event.prompt, references);
 		const list = formatReferenceList(matches.length > 0 ? matches : references);
-		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash. If the user @mentions a reference (for example @effect-smol, https://github.com/Effect-TS/effect-smol) or asks about a topic matching its description, inspect that reference when useful. Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
+		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash. If the user @mentions a reference (for example @cedarjs) or asks about a topic matching its description, inspect that reference when useful. Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
 		return { systemPrompt: event.systemPrompt + extra };
 	});
 
