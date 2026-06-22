@@ -100,7 +100,7 @@ export default function (pi: ExtensionAPI) {
 			pi.sendMessage(
 				{
 					customType: "vtsls-diagnostics",
-					content: `vtsls reported TypeScript error diagnostics after a write:\n\n${body}`,
+					content: `vtsls reported TypeScript error diagnostics after ${path.basename(absolutePath)} was read or changed:\n\n${body}`,
 					display: true,
 					details: { uri, diagnostics: errors },
 				},
@@ -137,7 +137,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_result", (event, ctx) => {
 		if (event.isError) return;
-		if (event.toolName !== "write" && event.toolName !== "edit") return;
+		if (event.toolName !== "read" && event.toolName !== "write" && event.toolName !== "edit") return;
 		const input = event.input as { path?: unknown };
 		if (typeof input.path !== "string") return;
 		scheduleDiagnostics(ctx, input.path);
