@@ -83,6 +83,7 @@ backup_target "$HOME/.config/nvim"
 backup_target "$HOME/.config/opencode/opencode.jsonc"
 backup_target "$HOME/.config/tmux"
 backup_target "$HOME/.config/starship"
+backup_target "$HOME/.config/herdr"
 backup_target "$HOME/.local/scripts"
 
 log_step "Stowing home dotfiles"

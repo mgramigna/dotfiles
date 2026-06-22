@@ -1,0 +1,6 @@
+# Herdr runtime/local state
+*
+
+# Keep the shared config in this repo
+!.gitignore
+!config.toml

@@ -73,6 +73,7 @@ home/.config/nvim
 home/.config/opencode
 home/.config/tmux
 home/.config/starship
+home/.config/herdr
 home/.pi/agent
 home/.local/scripts
 ```
@@ -92,6 +93,7 @@ The default Ubuntu setup links:
 - `~/.config/opencode`
 - `~/.config/tmux`
 - `~/.config/starship`
+- `~/.config/herdr`
 - `~/.pi/agent`
 - `~/.local/scripts`
 
