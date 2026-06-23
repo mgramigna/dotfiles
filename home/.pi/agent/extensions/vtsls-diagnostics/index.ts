@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { basename, extname, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -39,6 +39,7 @@ const DIAGNOSTIC_SETTLE_MS = 1_200;
 const MAX_REPORTED_DIAGNOSTICS = 30;
 const VTSLS_MAX_OLD_SPACE_MB = 12 * 1024;
 const EXTENSION_PATH_MARKER = "/vtsls-diagnostics/index.ts";
+const PI_EXTENSIONS_PATH_MARKERS = ["/.pi/agent/extensions/", "/.pi/agents/extensions/"];
 
 export default function (pi: ExtensionAPI) {
 	let client: VtslsClient | undefined;
@@ -100,7 +101,7 @@ export default function (pi: ExtensionAPI) {
 			pi.sendMessage(
 				{
 					customType: "vtsls-diagnostics",
-					content: `vtsls reported TypeScript error diagnostics after ${path.basename(absolutePath)} was read or changed:\n\n${body}`,
+					content: `vtsls reported TypeScript error diagnostics after ${basename(absolutePath)} was read or changed:\n\n${body}`,
 					display: true,
 					details: { uri, diagnostics: errors },
 				},
@@ -520,7 +521,8 @@ function fileURLToPathSafe(uri: string): string | undefined {
 }
 
 function isIgnoredDiagnosticPath(filePath: string): boolean {
-	return filePath.endsWith(EXTENSION_PATH_MARKER) || filePath.includes("/.pi/agent/extensions/vtsls-diagnostics/");
+	const normalizedPath = normalize(filePath).replaceAll("\\", "/");
+	return normalizedPath.endsWith(EXTENSION_PATH_MARKER) || PI_EXTENSIONS_PATH_MARKERS.some((marker) => normalizedPath.includes(marker));
 }
 
 function parseRefreshArgs(args: string, cwd: string): { hard: boolean; paths: string[] | undefined } {
