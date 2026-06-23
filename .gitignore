@@ -10,3 +10,4 @@ home/.pi/agent/bin/
 home/.pi/agent/npm/node_modules/
 home/.pi/agent/references.json
 home/.pi/agent/trust.json
+home/.pi/agent/logs/overseer-*.log
