@@ -167,6 +167,25 @@ function kickoffPrompt(state: OrchestratorRun) {
   return `You are implementing a stacked PRD slice managed by the global orchestrator extension.\n\nRun: ${state.runId}\nSlice ${state.currentIndex + 1} of ${state.issues.length}\nIssue: ${issue.id} — ${issue.title}\n\nIssue prompt:\n${issue.prompt}\n\nPrevious committed slices:\n${prior || "None"}\n\nInstructions:\n- Implement only this slice.\n- Preserve the stack; do not switch branches unless explicitly needed.\n- Run relevant checks/tests.\n- When implementation is ready, call orchestrator_request_review with a concise implementation summary and checks run.\n- If review asks for changes, make them and request review again.\n- Do not commit manually; orchestrator_review_pass will commit for you.`;
 }
 
+const ORCHESTRATOR_HELP = `Orchestrator commands:
+- /orchestrator-plan <prd-path|github-issue-url...>
+  Convert PRD files or GitHub issues into a JSON plan and save it under ~/.pi/agent/orchestrator.
+- /orchestrator-start <json|prd-path|github-issue-url...> [--hitl]
+  Start from an existing JSON plan, or ask the agent to create a plan from PRD sources. By default it auto-continues slices; --hitl pauses after each committed slice.
+- /orchestrator-continue
+  Start the next pending slice for the current run.
+- /orchestrator-status
+  Show the saved state for the current repository.
+- /orchestrator-stop
+  Mark the current run as stopped.
+- /orchestrator-help
+  Show this help.
+
+Typical flow:
+1. /orchestrator-plan docs/prd.md
+2. Inspect the generated plan, or let /orchestrator-start docs/prd.md create and start one.
+3. The agent implements each slice, requests review, commits, then continues unless --hitl was used.`;
+
 function prepareBranch(cwd: string, state: OrchestratorRun) {
   const idx = state.currentIndex;
   const issue = currentIssue(state);
@@ -185,10 +204,21 @@ function prepareBranch(cwd: string, state: OrchestratorRun) {
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand("orchestrator-help", {
+    description: "Show orchestrator command help",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(ORCHESTRATOR_HELP, "info");
+    },
+  });
+
   pi.registerCommand("orchestrator-start", {
     description: "Start an orchestrator run from JSON, PRD paths, or GitHub issue URLs: /orchestrator-start <json|prd-path|issue-url...> [--hitl]",
     handler: async (args, ctx) => {
       const parts = args.trim().split(/\s+/).filter(Boolean);
+      if (parts.includes("help") || parts.includes("--help") || parts.includes("-h")) {
+        ctx.ui.notify(ORCHESTRATOR_HELP, "info");
+        return;
+      }
       const sources = parts.filter((p) => !p.startsWith("--"));
       if (sources.length === 0) {
         ctx.ui.notify("Usage: /orchestrator-start <json|prd-path|github-issue-url...> [--hitl]", "error");
@@ -227,6 +257,10 @@ export default function (pi: ExtensionAPI) {
     description: "Convert PRD paths or GitHub issue URLs into an orchestrator JSON plan without starting: /orchestrator-plan <prd-path|issue-url...>",
     handler: async (args, ctx) => {
       const sources = args.trim().split(/\s+/).filter(Boolean);
+      if (sources.includes("help") || sources.includes("--help") || sources.includes("-h")) {
+        ctx.ui.notify(ORCHESTRATOR_HELP, "info");
+        return;
+      }
       if (sources.length === 0) return ctx.ui.notify("Usage: /orchestrator-plan <prd-path|github-issue-url...>", "error");
       pi.sendUserMessage(planningPrompt(ctx.cwd, sources, false));
     },
@@ -322,11 +356,6 @@ export default function (pi: ExtensionAPI) {
       if (!state) return { isError: true, content: [{ type: "text", text: "No orchestrator state found." }] };
       const issue = currentIssue(state);
       sh(ctx.cwd, ["add", "-A"]);
-      try {
-        sh(ctx.cwd, ["reset", "--", STATE_DIR]);
-      } catch {
-        // STATE_DIR may not be tracked or pathspec may not exist; ignore.
-      }
       sh(ctx.cwd, ["commit", "-m", params.commitMessage]);
       const commit = sh(ctx.cwd, ["rev-parse", "--short", "HEAD"]);
       issue.status = "committed";

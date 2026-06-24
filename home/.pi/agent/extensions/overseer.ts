@@ -24,6 +24,25 @@ const DEFAULT_MAX_DIFF_BYTES = 60_000;
 const REVIEW_TIMEOUT_MS = 120_000;
 const LOG_DIR = join(getAgentDir(), "logs");
 
+const OVERSEER_HELP = `Overseer commands:
+- /overseer enable
+  Turn on async review for this session. Overseer watches edit/write and likely-mutating bash commands.
+- /overseer disable
+  Turn off async review and clear pending files.
+- /overseer status
+  Show whether overseer is enabled and list pending files.
+- /overseer review-now
+  Immediately review pending files, or the current git diff if nothing is pending.
+- /overseer clear
+  Clear pending files and the last diff hash.
+- /overseer help
+  Show this help.
+
+Notes:
+- Reviews are advisory and delivered back into the main session when findings are defensible.
+- Trace logs are written under the pi agent log directory.
+- Overseer reviews uncommitted diffs and does not edit files.`;
+
 const REVIEW_PROMPT = `You are \`overseer\`, a background code review agent for defensible technical findings.
 
 Use epistemic discipline at all times. Your job is not to sound plausible.
@@ -392,9 +411,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Opt-in async code review for recent edits: enable, disable, status, review-now, clear",
+		description: "Opt-in async code review for recent edits: enable, disable, status, review-now, clear, help",
 		handler: async (args: string, ctx: any) => {
 			const subcommand = args.trim() || "status";
+			if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
+				ctx.ui.notify(OVERSEER_HELP, "info");
+				return;
+			}
+
 			if (subcommand === "enable") {
 				state.enabled = true;
 				pi.appendEntry(CUSTOM_STATE, { enabled: true, at: Date.now() });
@@ -427,6 +451,11 @@ export default function (pi: ExtensionAPI) {
 					for (const file of changed?.split("\n") ?? []) addPendingFile(file);
 				}
 				await reviewNow(pi, ctx, "manual");
+				return;
+			}
+
+			if (subcommand !== "status") {
+				ctx.ui.notify(OVERSEER_HELP, "warning");
 				return;
 			}
 

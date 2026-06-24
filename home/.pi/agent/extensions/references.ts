@@ -24,6 +24,18 @@ interface ReferencesConfig {
 const configPath = path.join(homedir(), ".pi", "agent", "references.json");
 const defaultReposDir = path.join(homedir(), ".local", "share", "pi", "references");
 
+const REFERENCES_HELP = `References commands:
+- /references list
+  List configured reference repositories and local clone paths.
+- /references sync [name]
+  Clone or update all references, or only one reference. Names may be passed with or without @.
+- /references add <name> <git-url> <description>
+  Add or replace a reference in ~/.pi/agent/references.json. Run sync afterward to clone it.
+- /references help
+  Show this help.
+
+Reference repos are injected into agent context so @mentions and framework/source-code questions can use them. They live outside the current workspace and should be read-only unless explicitly requested.`;
+
 function slugify(name: string) {
 	return name
 		.toLowerCase()
@@ -118,9 +130,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("references", {
-		description: "List, add, or sync reference repositories",
+		description: "List, add, sync, or show help for reference repositories",
 		handler: async (args, ctx) => {
 			const [action, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+			if (action === "help" || action === "--help" || action === "-h") {
+				ctx.ui.notify(REFERENCES_HELP, "info");
+				return;
+			}
+
 			const config = await loadConfig();
 			config.references ??= [];
 
@@ -151,7 +168,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			ctx.ui.notify("Usage: /references [list|sync [name]|add <name> <git-url> <description>]", "warning");
+			ctx.ui.notify(REFERENCES_HELP, "warning");
 		},
 	});
 
