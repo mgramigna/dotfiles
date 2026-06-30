@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, extname, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -40,6 +41,7 @@ const MAX_REPORTED_DIAGNOSTICS = 30;
 const VTSLS_MAX_OLD_SPACE_MB = 12 * 1024;
 const EXTENSION_PATH_MARKER = "/vtsls-diagnostics/index.ts";
 const PI_EXTENSIONS_PATH_MARKERS = ["/.pi/agent/extensions/", "/.pi/agents/extensions/"];
+const REFERENCE_REPO_ROOTS = [resolve(homedir(), ".local/share/pi/references")];
 
 export default function (pi: ExtensionAPI) {
 	let client: VtslsClient | undefined;
@@ -56,6 +58,10 @@ export default function (pi: ExtensionAPI) {
 				lastHealth = message;
 			}, (uri, diagnostics) => {
 				const filePath = fileURLToPathSafe(uri) ?? uri;
+				if (isIgnoredDiagnosticPath(filePath)) {
+					diagnosticState.delete(uri);
+					return;
+				}
 				diagnosticState.set(uri, {
 					uri,
 					path: filePath,
@@ -522,7 +528,16 @@ function fileURLToPathSafe(uri: string): string | undefined {
 
 function isIgnoredDiagnosticPath(filePath: string): boolean {
 	const normalizedPath = normalize(filePath).replaceAll("\\", "/");
-	return normalizedPath.endsWith(EXTENSION_PATH_MARKER) || PI_EXTENSIONS_PATH_MARKERS.some((marker) => normalizedPath.includes(marker));
+	return (
+		normalizedPath.endsWith(EXTENSION_PATH_MARKER) ||
+		PI_EXTENSIONS_PATH_MARKERS.some((marker) => normalizedPath.includes(marker)) ||
+		REFERENCE_REPO_ROOTS.some((root) => isPathInside(normalizedPath, root))
+	);
+}
+
+function isPathInside(normalizedPath: string, root: string): boolean {
+	const normalizedRoot = normalize(root).replaceAll("\\", "/");
+	return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
 }
 
 function parseRefreshArgs(args: string, cwd: string): { hard: boolean; paths: string[] | undefined } {

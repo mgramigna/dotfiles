@@ -28,13 +28,13 @@ const REFERENCES_HELP = `References commands:
 - /references list
   List configured reference repositories and local clone paths.
 - /references sync [name]
-  Clone or update all references, or only one reference. Names may be passed with or without @.
+  Clone or update all references, or only one reference. Names may be passed with or without #.
 - /references add <name> <git-url> <description>
   Add or replace a reference in ~/.pi/agent/references.json. Run sync afterward to clone it.
 - /references help
   Show this help.
 
-Reference repos are injected into agent context so @mentions and framework/source-code questions can use them. They live outside the current workspace and should be read-only unless explicitly requested.`;
+Reference repos are injected into agent context so #mentions and framework/source-code questions can use them. They live outside the current workspace and should be read-only unless explicitly requested.`;
 
 function slugify(name: string) {
 	return name
@@ -101,14 +101,19 @@ function formatReferenceList(references: ReferenceRepo[]) {
 	}
 
 	return references
-		.map((ref) => `- @${ref.name}: ${repoPath(ref)}\n  ${ref.description}\n  ${ref.url}`)
+		.map((ref) => `- #${ref.name}: ${repoPath(ref)}\n  ${ref.description}\n  ${ref.url}`)
 		.join("\n");
+}
+
+function stripMentionPrefix(name: string) {
+	return name.replace(/^#/, "");
 }
 
 function matchingReferences(prompt: string, references: ReferenceRepo[]) {
 	const lower = prompt.toLowerCase();
 	return references.filter((ref) => {
-		if (lower.includes(`@${ref.name.toLowerCase()}`)) return true;
+		const name = ref.name.toLowerCase();
+		if (lower.includes(`#${name}`)) return true;
 		const words = `${ref.name} ${ref.description}`
 			.toLowerCase()
 			.split(/[^a-z0-9]+/)
@@ -117,7 +122,51 @@ function matchingReferences(prompt: string, references: ReferenceRepo[]) {
 	});
 }
 
+function currentMentionPrefix(lines: string[], cursorLine: number, cursorCol: number) {
+	const beforeCursor = lines[cursorLine]?.slice(0, cursorCol) ?? "";
+	return beforeCursor.match(/(^|\s)(#[a-zA-Z0-9._-]*)$/)?.[2] ?? null;
+}
+
 export default function (pi: ExtensionAPI) {
+	let autocompleteRegistered = false;
+
+	pi.on("session_start", async (_event, ctx) => {
+		if (autocompleteRegistered) return;
+		autocompleteRegistered = true;
+		ctx.ui.addAutocompleteProvider((current) => ({
+			triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "#"])],
+			async getSuggestions(lines, cursorLine, cursorCol, options) {
+				const prefix = currentMentionPrefix(lines, cursorLine, cursorCol);
+				if (!prefix) return current.getSuggestions(lines, cursorLine, cursorCol, options);
+
+				const config = await loadConfig();
+				const marker = prefix[0];
+				const query = prefix.slice(1).toLowerCase();
+				const items = (config.references ?? [])
+					.filter((ref) => ref.name.toLowerCase().includes(query))
+					.map((ref) => ({
+						value: `${marker}${ref.name}`,
+						label: `${marker}${ref.name}`,
+						description: ref.description,
+					}));
+				return items.length > 0 ? { items, prefix } : current.getSuggestions(lines, cursorLine, cursorCol, options);
+			},
+			applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+				if (!prefix.startsWith("#") || !item.value.startsWith("#")) {
+					return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+				}
+				const line = lines[cursorLine] ?? "";
+				const start = Math.max(0, cursorCol - prefix.length);
+				const nextLines = [...lines];
+				nextLines[cursorLine] = `${line.slice(0, start)}${item.value}${line.slice(cursorCol)}`;
+				return { lines: nextLines, cursorLine, cursorCol: start + item.value.length };
+			},
+			shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+				return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? false;
+			},
+		}));
+	});
+
 	pi.on("before_agent_start", async (event) => {
 		const config = await loadConfig();
 		const references = config.references ?? [];
@@ -125,7 +174,7 @@ export default function (pi: ExtensionAPI) {
 
 		const matches = matchingReferences(event.prompt, references);
 		const list = formatReferenceList(matches.length > 0 ? matches : references);
-		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash. If the user @mentions a reference (for example @cedarjs) or asks about a topic matching its description, inspect that reference when useful. Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
+		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash.\n\nReference lookup policy:\n- For questions about external framework/library internals, behavior, APIs, generators, routing, GraphQL, Vite, CLI behavior, or source code, prefer these cloned reference repositories over node_modules.\n- If a configured reference matches the project/topic, inspect the cloned source before looking in node_modules.\n- Use node_modules only as a fallback or when the task specifically depends on the installed package version/build artifacts.\n- Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
 		return { systemPrompt: event.systemPrompt + extra };
 	});
 
@@ -147,16 +196,15 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (action === "sync") {
-				const wanted = rest[0];
-				const refs = wanted
-					? config.references.filter((ref) => ref.name === wanted || `@${ref.name}` === wanted)
-					: config.references;
+				const wanted = rest[0] ? stripMentionPrefix(rest[0]) : undefined;
+				const refs = wanted ? config.references.filter((ref) => ref.name === wanted) : config.references;
 				for (const ref of refs) ctx.ui.notify(await syncReference(ref), "info");
 				return;
 			}
 
 			if (action === "add") {
-				const [name, url, ...descriptionParts] = rest;
+				const [rawName, url, ...descriptionParts] = rest;
+				const name = rawName ? stripMentionPrefix(rawName) : undefined;
 				if (!name || !url || descriptionParts.length === 0) {
 					ctx.ui.notify("Usage: /references add <name> <git-url> <description>", "warning");
 					return;
@@ -164,7 +212,7 @@ export default function (pi: ExtensionAPI) {
 				config.references = config.references.filter((ref) => ref.name !== name);
 				config.references.push({ name, url, description: descriptionParts.join(" ") });
 				await saveConfig(config);
-				ctx.ui.notify(`Added @${name}. Run /references sync ${name} to clone it.`, "info");
+				ctx.ui.notify(`Added #${name}. Run /references sync ${name} to clone it.`, "info");
 				return;
 			}
 
@@ -178,7 +226,7 @@ export default function (pi: ExtensionAPI) {
 		description: "List or sync configured external reference repositories",
 		promptSnippet: "List or sync external reference repositories configured for this user",
 		promptGuidelines: [
-			"Use reference_repos to list configured external codebase references when the user @mentions a reference or asks about external framework/source code.",
+			"Use reference_repos to list configured external codebase references when the user #mentions a reference or asks about external framework/source code.",
 		],
 		parameters: Type.Object({
 			action: Type.Union([Type.Literal("list"), Type.Literal("sync")]),
@@ -190,7 +238,7 @@ export default function (pi: ExtensionAPI) {
 			if (params.action === "list") {
 				return { content: [{ type: "text", text: formatReferenceList(references) }] };
 			}
-			const refs = params.name ? references.filter((ref) => ref.name === params.name) : references;
+			const refs = params.name ? references.filter((ref) => ref.name === stripMentionPrefix(params.name)) : references;
 			const results = [];
 			for (const ref of refs) results.push(await syncReference(ref));
 			return { content: [{ type: "text", text: results.join("\n") || "No matching references." }] };
