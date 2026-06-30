@@ -119,6 +119,28 @@ function summarizeChecks(checks: PrCheck[] | null): string {
 	return `${passed}/${total} ✓`;
 }
 
+async function openCurrentPr(ctx: ExtensionContext): Promise<void> {
+	const gitRoot = await getGitRoot(ctx.cwd);
+	if (!gitRoot) {
+		ctx.ui.notify("Not in a git repository", "warning");
+		return;
+	}
+
+	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,url"], gitRoot);
+	if (!pr?.url) {
+		ctx.ui.notify("No current GitHub PR found", "warning");
+		return;
+	}
+
+	const result = await exec(["open", pr.url], gitRoot);
+	if (result === null) {
+		ctx.ui.notify(`Failed to open PR #${pr.number}`, "error");
+		return;
+	}
+
+	ctx.ui.notify(`Opened PR #${pr.number}`, "success");
+}
+
 async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
 	const gitRoot = await getGitRoot(ctx.cwd);
 	if (!gitRoot) {
@@ -244,7 +266,13 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("pr-status", {
 		description: "Refresh the GitHub PR/checks statusline item",
 		handler: async (args, ctx) => {
-			if (["rerun", "rerun-failed", "retry"].includes(args.trim())) {
+			const action = args.trim();
+			if (["open", "view"].includes(action)) {
+				await openCurrentPr(ctx);
+				return;
+			}
+
+			if (["rerun", "rerun-failed", "retry"].includes(action)) {
 				await rerunFailedChecks(ctx);
 				await refreshSafely(ctx);
 				return;
@@ -252,6 +280,13 @@ export default function (pi: ExtensionAPI) {
 
 			await refreshSafely(ctx);
 			ctx.ui.notify("GitHub PR status refreshed", "info");
+		},
+	});
+
+	pi.registerCommand("pr-open", {
+		description: "Open the current GitHub PR in the browser",
+		handler: async (_args, ctx) => {
+			await openCurrentPr(ctx);
 		},
 	});
 
