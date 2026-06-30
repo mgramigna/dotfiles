@@ -59,8 +59,26 @@ load_cargo_env() {
   fi
 }
 
+configure_cargo_c_build_env() {
+  export CC="${CC:-gcc}"
+  export CXX="${CXX:-g++}"
+
+  # Some Rust crates use bindgen/libclang even when compiling C code with GCC.
+  # On fresh Ubuntu installs, clang may not know GCC's private include dir,
+  # which contains standard headers such as stdbool.h.
+  local gcc_include_dir
+  gcc_include_dir="$(gcc -print-file-name=include 2>/dev/null || true)"
+  if [ -n "$gcc_include_dir" ] && [ -d "$gcc_include_dir" ]; then
+    case " ${BINDGEN_EXTRA_CLANG_ARGS:-} " in
+      *" -isystem $gcc_include_dir "*) ;;
+      *) export BINDGEN_EXTRA_CLANG_ARGS="${BINDGEN_EXTRA_CLANG_ARGS:-} -isystem $gcc_include_dir" ;;
+    esac
+  fi
+}
+
 install_tree_sitter() {
   load_cargo_env
+  configure_cargo_c_build_env
 
   if command -v tree-sitter >/dev/null 2>&1 && tree-sitter --help 2>/dev/null | grep -q 'build'; then
     return
@@ -140,6 +158,9 @@ install_tailscale() {
 }
 
 install_herdr() {
+  load_cargo_env
+  configure_cargo_c_build_env
+
   if command -v herdr >/dev/null 2>&1; then
     return
   fi
@@ -157,6 +178,7 @@ log_step "starship"
 install_starship
 log_step "rustup"
 install_rustup
+load_cargo_env
 log_step "tree-sitter-cli"
 install_tree_sitter
 log_step "n and Node.js LTS"

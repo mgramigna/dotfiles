@@ -4,8 +4,12 @@ ca-certificates
 curl
 fd-find
 fzf
+g++
+gcc
 git
 jq
+libc6-dev
+pkg-config
 ripgrep
 shellcheck
 stow
