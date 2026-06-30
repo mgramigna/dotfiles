@@ -69,6 +69,7 @@ check_command n
 check_command node
 check_command npm
 check_command tailscale
+check_command herdr
 
 echo
 echo "Links"

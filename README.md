@@ -8,7 +8,7 @@ This repository is optimized for bootstrapping fresh Ubuntu and macOS machines.
 
 On Ubuntu, the default bootstrap command installs apt packages, installs a small set of external tools, links dotfiles with GNU Stow, and prints a setup summary.
 
-On macOS, start with Homebrew packages:
+On macOS, the default bootstrap command installs Homebrew packages, installs external tools, links dotfiles, and prints a setup summary. You can still run Homebrew packages only:
 
 ```bash
 ./bootstrap brew
@@ -62,6 +62,7 @@ Fast-moving tools or tools with installer-specific behavior are handled in `inst
 - atuin
 - bob
 - tailscale
+- herdr
 
 ## Linked Dotfiles
 

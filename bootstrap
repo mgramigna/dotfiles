@@ -35,14 +35,23 @@ require_ubuntu() {
   fi
 }
 
+is_macos() {
+  [ "$(uname -s)" = "Darwin" ]
+}
+
 main() {
   local command="${1:-all}"
 
   case "$command" in
     all)
-      require_ubuntu
-      log_step "Installing apt packages"
-      "$ROOT/install/apt"
+      if is_macos; then
+        log_step "Installing Homebrew packages"
+        "$ROOT/install/brew"
+      else
+        require_ubuntu
+        log_step "Installing apt packages"
+        "$ROOT/install/apt"
+      fi
       log_step "Installing external tools"
       "$ROOT/install/external"
       log_step "Linking dotfiles"
@@ -50,10 +59,11 @@ main() {
       log_step "Running setup doctor"
       "$ROOT/install/doctor"
       ;;
-    apt|external|link|doctor)
-      if [ "$command" != "doctor" ] && [ "$command" != "link" ]; then
-        require_ubuntu
-      fi
+    apt)
+      require_ubuntu
+      "$ROOT/install/$command"
+      ;;
+    external|link|doctor)
       "$ROOT/install/$command"
       ;;
     brew)

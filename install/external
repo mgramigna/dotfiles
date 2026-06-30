@@ -127,6 +127,14 @@ install_tailscale() {
   rm -f "$tmp"
 }
 
+install_herdr() {
+  if command -v herdr >/dev/null 2>&1; then
+    return
+  fi
+
+  curl -fsSL https://herdr.dev/install.sh | sh
+}
+
 log_step "oh-my-zsh"
 install_oh_my_zsh
 log_step "zsh-syntax-highlighting"
@@ -147,3 +155,5 @@ log_step "bob and Neovim"
 install_bob
 log_step "tailscale"
 install_tailscale
+log_step "herdr"
+install_herdr
