@@ -1,475 +1,312 @@
 import { execFile } from "node:child_process";
-import { appendFile, mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import {
-	createAgentSession,
-	DefaultResourceLoader,
-	getAgentDir,
-	SessionManager,
-	type ExtensionAPI,
-	type ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
-import { Box, Text } from "@earendil-works/pi-tui";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 const execFileAsync = promisify(execFile);
 
-const CUSTOM_STATE = "overseer-state";
-const CUSTOM_REVIEW = "overseer-review";
+const RUN_DIR = join(getAgentDir(), "overseer");
+const CUSTOM_REVIEW_COMPLETE = "overseer-review-complete";
+const REVIEW_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 
-const DEFAULT_DEBOUNCE_MS = 15_000;
-const DEFAULT_MIN_REVIEW_INTERVAL_MS = 60_000;
-const DEFAULT_MAX_DIFF_BYTES = 60_000;
-const REVIEW_TIMEOUT_MS = 120_000;
-const LOG_DIR = join(getAgentDir(), "logs");
+const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only code review agent running beside a coding agent in a herdr pane.
 
-const OVERSEER_HELP = `Overseer commands:
-- /overseer enable
-  Turn on async review for this session. Overseer watches edit/write and likely-mutating bash commands.
-- /overseer disable
-  Turn off async review and clear pending files.
-- /overseer status
-  Show whether overseer is enabled and list pending files.
-- /overseer review-now
-  Immediately review pending files, or the current git diff if nothing is pending.
-- /overseer clear
-  Clear pending files and the last diff hash.
-- /overseer help
-  Show this help.
+Your job is to look over the shoulder of the implementation agent and produce defensible, evidence-backed review findings. Do not edit files.
 
-Notes:
-- Reviews are advisory and delivered back into the main session when findings are defensible.
-- Trace logs are written under the pi agent log directory.
-- Overseer reviews uncommitted diffs and does not edit files.`;
+Review standard:
+- Only report issues introduced or made relevant by the supplied diff.
+- Prefer correctness, security, data loss, concurrency, auth, validation, rollback, and test-risk findings.
+- Avoid style nits unless they hide a correctness or maintainability problem.
+- Falsify every finding before reporting it: look for guards, invariants, tests, framework behavior, and call-site constraints.
+- If the evidence is weak, label it HUNCH or QUESTION instead of presenting it as fact.
 
-const REVIEW_PROMPT = `You are \`overseer\`, a background code review agent for defensible technical findings.
+Required format for each issue:
 
-Use epistemic discipline at all times. Your job is not to sound plausible.
-Your job is to produce findings that can survive scrutiny.
-
-You are reviewing the diff and context supplied by the caller. Do not look for a
-different review target. Do not make edits.
-
-Only report findings introduced or made relevant by the supplied diff. Do not
-report pre-existing issues unless the diff makes them worse or newly reachable.
-Prefer \`VERIFIED\` findings. Suppress weak \`HUNCH\` findings unless they point
-to serious correctness, security, or data-loss risk.
-
-Core standards:
-
-1. Trace or delete.
-   - Every finding must trace to code, logs, commands, or other direct evidence.
-   - If you cannot show evidence, delete the claim or label it a \`HUNCH\` or \`QUESTION\`.
-
-2. Facts, not assumptions.
-   - Say what the code shows, not what you think it probably means.
-   - Be concrete: exact paths, line numbers, conditions, branches, and data flow.
-
-3. Label confidence.
-   - \`VERIFIED\`: directly supported by evidence you traced.
-   - \`HUNCH\`: pattern recognition or suspicion, not fully traced.
-   - \`QUESTION\`: needs user input, runtime confirmation, or missing context.
-   - Never present a \`HUNCH\` as a confirmed finding.
-
-4. Falsify, don't confirm.
-   - Try to prove yourself wrong before reporting a bug.
-   - Ask: what would make this not a bug?
-   - Check for guards, invariants, upstream validation, framework behavior, or other counter-evidence.
-
-Quality criteria:
-
-1. Proven correctness: did you verify behavior, or only inspect code?
-2. Types tell the truth: do types and abstractions match reality?
-3. Naming is honest: do names mislead future readers?
-4. Edges tested: what happens on the unhappy path?
-5. Self-consistent abstractions: can the full path be explained without contradiction?
-
-Slop indicators:
-
-- missing tests where risk is high
-- contradictions in abstractions
-- names that lie about behavior or contents
-- pattern-match claims without direct evidence
-
-Review heuristics:
-
-- prioritize correctness, security, data loss, concurrency, auth, validation, and rollback risk
-- prefer a few strong findings over many weak ones
-- avoid style nits unless they hide a correctness or maintenance problem
-- if no actionable issue is supported, say so plainly
-
-Required report format:
-
-\`\`\`markdown
 ## finding: <title>
 
 **confidence:** VERIFIED | HUNCH | QUESTION
 **location:** file:line
-**evidence:** what the code actually shows
-**falsification attempted:** what would disprove this, and whether you checked
-\`\`\`
+**evidence:** what the code/diff actually shows
+**falsification attempted:** what you checked that might have disproven it
+**suggested fix:** concise remediation
 
-Output rules:
+If there are no defensible issues, say exactly: "I found no defensible issues."`;
 
-- Use the exact format above for each finding.
-- Include line references whenever possible.
-- Keep evidence specific and code-grounded.
-- If there are no findings, say that you found no defensible issues.
-- Do not emit XML.
-- Do not make edits.`;
+const HELP = `Overseer commands:
+- /overseer review      Spawn a right-side herdr pane running a fresh pi review session.
+- /overseer pane        Show the last recorded overseer pane id.
+- /overseer read [n]    Read recent output from the overseer pane.
+- /overseer help        Show this help.
+
+This version is manual-only and never blocks the main agent loop. The review runs as an independent pi TUI in herdr. When the reviewer finishes, the main agent is notified and should inspect the pane output before deciding what to do next.`;
 
 interface OverseerState {
-	enabled: boolean;
-	pendingFiles: Set<string>;
-	reviewInFlight: boolean;
-	reviewAgain: boolean;
-	lastReviewAt: number;
-	lastDiffHash?: string;
-	timer?: ReturnType<typeof setTimeout>;
-	cwd?: string;
+	paneId?: string;
+	promptPath?: string;
+	startedAt?: number;
+	monitorToken?: number;
 }
 
-const state: OverseerState = {
-	enabled: false,
-	pendingFiles: new Set(),
-	reviewInFlight: false,
-	reviewAgain: false,
-	lastReviewAt: 0,
-};
+const state: OverseerState = {};
 
-async function git(cwd: string, args: string[], maxBuffer = 20 * 1024 * 1024): Promise<string> {
-	const { stdout } = await execFileAsync("git", args, { cwd, maxBuffer, timeout: 30_000 });
+async function execJson(command: string, args: string[], cwd?: string): Promise<any> {
+	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 2 * 1024 * 1024, timeout: 10_000 });
+	return JSON.parse(stdout);
+}
+
+async function execText(command: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
+	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 20 * 1024 * 1024, timeout });
 	return stdout.trimEnd();
 }
 
-async function gitOrNull(cwd: string, args: string[]): Promise<string | null> {
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function modelArg(ctx: ExtensionContext): string | undefined {
+	const model = (ctx as any).model;
+	if (!model?.id) return undefined;
+	return model.provider ? `${model.provider}/${model.id}` : model.id;
+}
+
+async function currentPaneId(cwd: string): Promise<string | undefined> {
+	if (process.env.HERDR_ENV !== "1") return undefined;
+	if (process.env.HERDR_PANE_ID) return process.env.HERDR_PANE_ID;
+	const payload = await execJson("herdr", ["pane", "list"], cwd);
+	return payload?.result?.panes?.find((pane: any) => pane.focused)?.pane_id;
+}
+
+async function splitRight(cwd: string): Promise<string> {
+	const current = await currentPaneId(cwd);
+	if (!current) throw new Error("Overseer requires HERDR_ENV=1 and a focused herdr pane.");
+	const split = await execJson("herdr", ["pane", "split", current, "--direction", "right", "--no-focus"], cwd);
+	const paneId = split?.result?.pane?.pane_id;
+	if (typeof paneId !== "string") throw new Error("herdr did not return a new pane id.");
+	return paneId;
+}
+
+async function git(cwd: string, args: string[]): Promise<string> {
+	return execText("git", args, cwd);
+}
+
+async function gitOrEmpty(cwd: string, args: string[]): Promise<string> {
 	try {
 		return await git(cwd, args);
 	} catch {
-		return null;
+		return "";
 	}
 }
 
-function isProbablyMutatingShell(command: string): boolean {
-	return /(^|[;&|]\s*)(mv|cp|rm|mkdir|touch|python3?|node|npm|pnpm|yarn|bun|make|sed|perl|ruby|go|cargo|git)\b/.test(command);
+function timestamp(): string {
+	return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-function shouldIgnorePath(file: string): boolean {
-	return /(^|\/)(node_modules|dist|build|coverage|\.next|\.turbo)\//.test(file)
-		|| /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/.test(file)
-		|| /\.min\.(js|css)$/.test(file);
-}
-
-function addPendingFile(file: string): void {
-	const normalized = file.trim();
-	if (normalized && !shouldIgnorePath(normalized)) state.pendingFiles.add(normalized);
-}
-
-function hashText(text: string): string {
-	let hash = 5381;
-	for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash) ^ text.charCodeAt(i);
-	return (hash >>> 0).toString(16);
-}
-
-function truncateBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
-	// Use a conservative char cap to avoid requiring Node type globals in this extension file.
-	if (text.length <= maxBytes) return { text, truncated: false };
-	return { text: text.slice(0, maxBytes), truncated: true };
-}
-
-function hasNoFindings(review: string): boolean {
-	return !/## finding:/i.test(review) && /no defensible issues|no actionable issue|no findings/i.test(review);
-}
-
-function formatReviewForMainAgent(review: string, logPath?: string): string {
-	return [
-		"Overseer completed an async review of the recent edits.",
-		"Address any VERIFIED findings before continuing. Treat HUNCH/QUESTION items as review leads, not facts.",
-		logPath ? `Trace log: ${logPath}` : undefined,
+async function writeReviewPrompt(ctx: ExtensionContext): Promise<string> {
+	await mkdir(RUN_DIR, { recursive: true });
+	const changed = await gitOrEmpty(ctx.cwd, ["diff", "--name-only"]);
+	const stat = await gitOrEmpty(ctx.cwd, ["diff", "--stat"]);
+	const diff = await gitOrEmpty(ctx.cwd, ["diff", "--no-ext-diff"]);
+	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
+	const body = [
+		"# Overseer review request",
 		"",
-		review.trim(),
+		`Working directory: ${ctx.cwd}`,
+		"",
+		"Review the uncommitted diff below. You may inspect repository files to verify or falsify findings, but do not edit anything.",
+		"",
+		"## Changed files",
+		changed.trim() ? changed.split("\n").map((file) => `- ${file}`).join("\n") : "No changed files were reported by git diff --name-only.",
+		"",
+		"## Diff stat",
+		"```",
+		stat || "(empty)",
+		"```",
+		"",
+		"## Diff",
+		"```diff",
+		diff || "(empty)",
+		"```",
+		"",
+	].join("\n");
+	await writeFile(promptPath, body, "utf8");
+	return promptPath;
+}
+
+async function spawnReviewPane(ctx: ExtensionContext): Promise<OverseerState> {
+	const promptPath = await writeReviewPrompt(ctx);
+	const paneId = await splitRight(ctx.cwd);
+	const selectedModel = modelArg(ctx);
+	const modelFlag = selectedModel ? ` --model ${shellQuote(selectedModel)}` : "";
+	const command = [
+		"cd " + shellQuote(ctx.cwd),
+		"printf '%s\\n' '[overseer] starting pi review session...'",
+		`pi --no-skills --no-prompt-templates --no-themes --no-context-files${modelFlag} --name ${shellQuote("overseer review")} --system-prompt ${shellQuote(REVIEW_SYSTEM_PROMPT)} @${shellQuote(promptPath)}`,
+	].join(" && ");
+	await execFileAsync("herdr", ["pane", "run", paneId, command], { cwd: ctx.cwd, timeout: 10_000 });
+	state.paneId = paneId;
+	state.promptPath = promptPath;
+	state.startedAt = Date.now();
+	state.monitorToken = Date.now();
+	return { ...state };
+}
+
+async function readPane(cwd: string, paneId: string, lines = "120"): Promise<string> {
+	return execText("herdr", ["pane", "read", paneId, "--source", "recent", "--lines", lines], cwd, 10_000);
+}
+
+async function waitForReviewerDone(cwd: string, paneId: string): Promise<void> {
+	await execFileAsync("herdr", ["wait", "agent-status", paneId, "--status", "done", "--timeout", String(REVIEW_WAIT_TIMEOUT_MS)], {
+		cwd,
+		timeout: REVIEW_WAIT_TIMEOUT_MS + 5_000,
+	});
+}
+
+const FINDING_CONFIDENCE_RE = /(?:^|\n)\s*(?:\*\*)?confidence(?:\*\*)?\s*:\s*(VERIFIED|HUNCH|QUESTION)\b/i;
+const FINDING_HEADING_RE = /(?:^|\n)\s*(?:##\s*)?finding\s*:/i;
+
+function hasFindingConfidence(text: string): boolean {
+	return FINDING_CONFIDENCE_RE.test(text);
+}
+
+function extractReviewFindings(output: string): string {
+	const trimmed = output.trim();
+	if (!trimmed) return "";
+
+	const headingMatches = [...trimmed.matchAll(new RegExp(FINDING_HEADING_RE.source, "gi"))];
+	const findingSections = headingMatches
+		.map((match, index) => {
+			const start = match.index ?? 0;
+			const end = headingMatches[index + 1]?.index ?? trimmed.length;
+			return trimmed.slice(start, end).trim();
+		})
+		.filter(hasFindingConfidence);
+
+	if (findingSections.length > 0) return findingSections.join("\n\n");
+
+	return hasFindingConfidence(trimmed) ? trimmed : "";
+}
+
+function reviewCompleteMessage(paneId: string, promptPath: string | undefined, output: string): string {
+	const findings = extractReviewFindings(output);
+	const noFindings = findings.length === 0;
+	const result = noFindings ? "No VERIFIED, HUNCH, or QUESTION findings were found in the overseer output." : findings;
+	return [
+		`Overseer review completed in herdr pane ${paneId}.`,
+		promptPath ? `Review prompt: ${promptPath}` : undefined,
+		"",
+		"IMPORTANT: You must respond to the user so they know you saw this review. Do not silently continue or sit idle.",
+		noFindings
+			? "The reviewer appears to have found no defensible issues. If you agree, explicitly say that you saw the overseer review and no action is needed."
+			: "Inspect these findings and decide how to respond. If you make no changes, explicitly explain why. Treat HUNCH/QUESTION items as leads, not facts.",
+		"",
+		"Overseer result:",
+		"```",
+		result,
+		"```",
 	].filter((line): line is string => line !== undefined).join("\n");
 }
 
-function timestampForPath(date = new Date()): string {
-	return date.toISOString().replace(/[:.]/g, "-");
+function setOverseerStatus(ctx: ExtensionContext, text: string): void {
+	ctx.ui.setStatus("overseer", ctx.ui.theme.fg("dim", text));
 }
 
-async function createTraceLog(reason: string, files: string[], truncated: boolean): Promise<string> {
-	await mkdir(LOG_DIR, { recursive: true });
-	const logPath = join(LOG_DIR, `overseer-${timestampForPath()}.log`);
-	await appendFile(
-		logPath,
-		[
-			"# Overseer trace",
-			`started: ${new Date().toISOString()}`,
-			`reason: ${reason}`,
-			`truncated: ${truncated}`,
-			"files:",
-			...files.map((file) => `- ${file}`),
-			"",
-		].join("\n"),
-	);
-	return logPath;
-}
-
-async function trace(logPath: string | undefined, message: string): Promise<void> {
-	if (!logPath) return;
-	await appendFile(logPath, `[${new Date().toISOString()}] ${message}\n`);
-}
-
-async function collectDiff(cwd: string, files: string[]): Promise<{ diff: string; truncated: boolean }> {
-	const args = ["diff", "--no-ext-diff", "--", ...files];
-	const diff = await git(cwd, args, DEFAULT_MAX_DIFF_BYTES * 4);
-	const truncatedDiff = truncateBytes(diff, DEFAULT_MAX_DIFF_BYTES);
-	return { diff: truncatedDiff.text, truncated: truncatedDiff.truncated };
-}
-
-async function runReviewer(ctx: ExtensionContext, files: string[], diff: string, truncated: boolean, logPath?: string): Promise<string> {
-	const loader = new DefaultResourceLoader({
-		cwd: ctx.cwd,
-		agentDir: getAgentDir(),
-		noExtensions: true,
-		noSkills: true,
-		noPromptTemplates: true,
-		noThemes: true,
-		noContextFiles: true,
-		systemPrompt: REVIEW_PROMPT,
-	});
-	await loader.reload();
-
-	const { session } = await createAgentSession({
-		cwd: ctx.cwd,
-		resourceLoader: loader,
-		sessionManager: SessionManager.inMemory(ctx.cwd),
-		model: ctx.model,
-		modelRegistry: ctx.modelRegistry,
-		tools: ["read", "grep", "find"],
-	} as any);
-
-	let output = "";
-	const unsubscribe = session.subscribe((event: any) => {
-		if (event.type === "tool_execution_start") {
-			void trace(logPath, `tool start: ${event.toolName} ${JSON.stringify(event.args ?? {})}`);
+function monitorReviewer(pi: ExtensionAPI, ctx: ExtensionContext, paneId: string, promptPath: string | undefined, token: number): void {
+	void (async () => {
+		try {
+			await waitForReviewerDone(ctx.cwd, paneId);
+			if (state.monitorToken !== token || state.paneId !== paneId) return;
+			const output = await readPane(ctx.cwd, paneId, "200");
+			setOverseerStatus(ctx, "overseer: done");
+			ctx.ui.notify(`Overseer review completed in pane ${paneId}. Notifying the main agent.`, "info");
+			const message = reviewCompleteMessage(paneId, promptPath, output);
+			pi.sendMessage(
+				{
+					customType: CUSTOM_REVIEW_COMPLETE,
+					content: message,
+					display: true,
+					details: { paneId, promptPath },
+				},
+				{ deliverAs: "nextTurn" },
+			);
+			pi.sendUserMessage(message, { deliverAs: "followUp" });
+		} catch (error) {
+			if (state.monitorToken !== token || state.paneId !== paneId) return;
+			const message = error instanceof Error ? error.message : String(error);
+			setOverseerStatus(ctx, "overseer: error");
+			ctx.ui.notify(`Overseer monitor stopped for pane ${paneId}: ${message}`, "warning");
 		}
-		if (event.type === "tool_execution_end") {
-			void trace(logPath, `tool end: ${event.toolName} ${event.isError ? "error" : "ok"}`);
-		}
-		if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-			output += event.assistantMessageEvent.delta;
-		}
-		if (event.type === "agent_end") {
-			void trace(logPath, "agent end");
-		}
-	});
-
-	try {
-		const prompt = [
-			"Review the supplied uncommitted diff for defensible findings.",
-			truncated ? `The diff was truncated to ${DEFAULT_MAX_DIFF_BYTES} bytes. Say if truncation prevents a defensible conclusion.` : undefined,
-			"",
-			"Changed files:",
-			...files.map((file) => `- ${file}`),
-			"",
-			"Diff:",
-			"```diff",
-			diff,
-			"```",
-		]
-			.filter((part): part is string => part !== undefined)
-			.join("\n");
-
-		await trace(logPath, `prompt chars: ${prompt.length}`);
-		await Promise.race([
-			session.prompt(prompt),
-			new Promise((_, reject) => setTimeout(() => reject(new Error("overseer review timed out")), REVIEW_TIMEOUT_MS)),
-		]);
-		const trimmedOutput = output.trim();
-		await trace(logPath, `review output chars: ${trimmedOutput.length}`);
-		if (logPath) await appendFile(logPath, `\n## Reviewer output\n\n${trimmedOutput}\n`);
-		return trimmedOutput;
-	} finally {
-		unsubscribe();
-		session.dispose();
-	}
-}
-
-function scheduleReview(pi: ExtensionAPI, ctx: ExtensionContext, reason: string): void {
-	if (!state.enabled) return;
-	if (state.timer) clearTimeout(state.timer);
-	state.timer = setTimeout(() => void reviewNow(pi, ctx, reason), DEFAULT_DEBOUNCE_MS);
-	ctx.ui.setStatus("overseer", `overseer: ${state.pendingFiles.size} pending`);
-}
-
-async function reviewNow(pi: ExtensionAPI, ctx: ExtensionContext, reason = "manual"): Promise<void> {
-	if (!state.enabled) return;
-	if (state.reviewInFlight) {
-		state.reviewAgain = true;
-		return;
-	}
-
-	const elapsed = Date.now() - state.lastReviewAt;
-	if (reason !== "manual" && elapsed < DEFAULT_MIN_REVIEW_INTERVAL_MS) {
-		state.timer = setTimeout(() => void reviewNow(pi, ctx, "rate-limit"), DEFAULT_MIN_REVIEW_INTERVAL_MS - elapsed);
-		return;
-	}
-
-	const files = [...state.pendingFiles].filter(Boolean).sort();
-	if (files.length === 0) return;
-
-	state.reviewInFlight = true;
-	state.reviewAgain = false;
-	ctx.ui.setStatus("overseer", "overseer: reviewing");
-
-	try {
-		const { diff, truncated } = await collectDiff(ctx.cwd, files);
-		if (!diff.trim()) {
-			state.pendingFiles.clear();
-			ctx.ui.setStatus("overseer", "overseer: enabled");
-			return;
-		}
-
-		const diffHash = hashText(diff);
-		if (diffHash === state.lastDiffHash) return;
-		state.lastDiffHash = diffHash;
-		state.lastReviewAt = Date.now();
-
-		const logPath = await createTraceLog(reason, files, truncated);
-		await trace(logPath, `diff hash: ${diffHash}`);
-		await trace(logPath, `diff chars: ${diff.length}`);
-		const review = await runReviewer(ctx, files, diff, truncated, logPath);
-		if (!review || hasNoFindings(review)) {
-			ctx.ui.notify(`Overseer found no defensible issues. Trace: ${logPath}`, "info");
-			state.pendingFiles.clear();
-			return;
-		}
-
-		pi.sendMessage(
-			{
-				customType: CUSTOM_REVIEW,
-				content: formatReviewForMainAgent(review, logPath),
-				display: true,
-				details: { files, truncated, logPath },
-			},
-			{ deliverAs: "steer", triggerTurn: true },
-		);
-		state.pendingFiles.clear();
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		ctx.ui.notify(`Overseer review failed: ${message}`, "error");
-	} finally {
-		state.reviewInFlight = false;
-		ctx.ui.setStatus("overseer", state.enabled ? "overseer: enabled" : "");
-		if (state.reviewAgain && state.pendingFiles.size > 0) scheduleReview(pi, ctx, "queued");
-	}
-}
-
-function restoreState(ctx: ExtensionContext): void {
-	let enabled = false;
-	for (const entry of ctx.sessionManager.getEntries() as any[]) {
-		if (entry.type === "custom" && entry.customType === CUSTOM_STATE && typeof entry.data?.enabled === "boolean") {
-			enabled = entry.data.enabled;
-		}
-	}
-	state.enabled = enabled;
-	state.cwd = ctx.cwd;
-	ctx.ui.setStatus("overseer", enabled ? "overseer: enabled" : "");
+	})();
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.registerMessageRenderer(CUSTOM_REVIEW, (message: any, _options: any, theme: any) => {
-		const box = new Box(1, 1, (text: string) => theme.bg("customMessageBg", text));
-		box.addChild(new Text(`${theme.fg("accent", "[overseer]")} ${String(message.content ?? "")}`, 0, 0));
-		return box;
-	});
-
-	pi.on("session_start", async (_event: any, ctx: any) => {
-		restoreState(ctx);
+	pi.on("session_start", async (_event: any, ctx: ExtensionContext) => {
+		setOverseerStatus(ctx, state.paneId ? "overseer: reviewing" : "overseer: ready");
 	});
 
 	pi.on("session_shutdown", async () => {
-		if (state.timer) clearTimeout(state.timer);
-		state.timer = undefined;
-		state.reviewInFlight = false;
+		// The reviewer pane is intentionally left running; it is a visible, independent pi session.
 	});
 
-	pi.on("tool_result", async (event: any, ctx: any) => {
-		if (!state.enabled || event.isError) return;
-
-		if ((event.toolName === "edit" || event.toolName === "write") && typeof event.input?.path === "string") {
-			addPendingFile(event.input.path);
-			scheduleReview(pi, ctx, event.toolName);
-			return;
-		}
-
-		if (event.toolName === "bash" && typeof event.input?.command === "string" && isProbablyMutatingShell(event.input.command)) {
-			const changed = await gitOrNull(ctx.cwd, ["diff", "--name-only"]);
-			for (const file of changed?.split("\n") ?? []) addPendingFile(file);
-			if (state.pendingFiles.size > 0) scheduleReview(pi, ctx, "bash");
-		}
+	pi.registerTool({
+		name: "overseer_read_pane",
+		label: "Read overseer pane",
+		description: "Read recent output from the latest herdr pane spawned by /overseer review.",
+		parameters: Type.Object({
+			lines: Type.Optional(Type.String({ description: "Number of recent lines to read. Defaults to 120." })),
+		}),
+		async execute(_toolCallId: string, params: { lines?: string }, _signal: any, _onUpdate: unknown, ctx: ExtensionContext) {
+			if (!state.paneId) {
+				return { content: [{ type: "text", text: "No overseer pane has been spawned in this session." }], details: {} };
+			}
+			const output = await readPane(ctx.cwd, state.paneId, params.lines ?? "120");
+			return { content: [{ type: "text", text: output || `(pane ${state.paneId} had no recent output)` }], details: { ...state } };
+		},
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Opt-in async code review for recent edits: enable, disable, status, review-now, clear, help",
-		handler: async (args: string, ctx: any) => {
-			const subcommand = args.trim() || "status";
-			if (subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
-				ctx.ui.notify(OVERSEER_HELP, "info");
+		description: "Manual herdr-pane overseer review: review, pane, read, help",
+		handler: async (args: string, ctx: ExtensionContext) => {
+			const [subcommand, maybeLines] = args.trim().split(/\s+/, 2);
+			const command = subcommand || "review";
+
+			if (command === "help" || command === "--help" || command === "-h") {
+				ctx.ui.notify(HELP, "info");
 				return;
 			}
 
-			if (subcommand === "enable") {
-				state.enabled = true;
-				pi.appendEntry(CUSTOM_STATE, { enabled: true, at: Date.now() });
-				ctx.ui.setStatus("overseer", "overseer: enabled");
-				ctx.ui.notify("Overseer enabled for this session.", "info");
+			if (command === "pane" || command === "status") {
+				ctx.ui.notify(state.paneId ? `Overseer pane: ${state.paneId}\nPrompt: ${state.promptPath}` : "No overseer pane has been spawned yet.", "info");
 				return;
 			}
 
-			if (subcommand === "disable") {
-				state.enabled = false;
-				state.pendingFiles.clear();
-				if (state.timer) clearTimeout(state.timer);
-				state.timer = undefined;
-				pi.appendEntry(CUSTOM_STATE, { enabled: false, at: Date.now() });
-				ctx.ui.setStatus("overseer", "");
-				ctx.ui.notify("Overseer disabled.", "info");
-				return;
-			}
-
-			if (subcommand === "clear") {
-				state.pendingFiles.clear();
-				state.lastDiffHash = undefined;
-				ctx.ui.notify("Overseer pending files cleared.", "info");
-				return;
-			}
-
-			if (subcommand === "review-now") {
-				if (state.pendingFiles.size === 0) {
-					const changed = await gitOrNull(ctx.cwd, ["diff", "--name-only"]);
-					for (const file of changed?.split("\n") ?? []) addPendingFile(file);
+			if (command === "read") {
+				if (!state.paneId) {
+					ctx.ui.notify("No overseer pane has been spawned yet.", "info");
+					return;
 				}
-				await reviewNow(pi, ctx, "manual");
+				const output = await readPane(ctx.cwd, state.paneId, maybeLines || "120");
+				ctx.ui.notify(`Overseer pane ${state.paneId}:\n\n${output}`, "info");
 				return;
 			}
 
-			if (subcommand !== "status") {
-				ctx.ui.notify(OVERSEER_HELP, "warning");
+			if (command !== "review") {
+				ctx.ui.notify(HELP, "warning");
 				return;
 			}
 
-			const pending = [...state.pendingFiles].sort();
-			ctx.ui.notify(
-				[
-					`Overseer is ${state.enabled ? "enabled" : "disabled"}.`,
-					`Pending files: ${pending.length}`,
-					pending.slice(0, 8).map((file) => `- ${file}`).join("\n"),
-				]
-					.filter(Boolean)
-					.join("\n"),
-				"info",
-			);
+			try {
+				setOverseerStatus(ctx, "overseer: spawning");
+				const spawned = await spawnReviewPane(ctx);
+				setOverseerStatus(ctx, "overseer: reviewing");
+				if (spawned.paneId && spawned.monitorToken) monitorReviewer(pi, ctx, spawned.paneId, spawned.promptPath, spawned.monitorToken);
+				ctx.ui.notify(`Overseer review spawned in herdr pane ${spawned.paneId}.\nPrompt: ${spawned.promptPath}\nThe main agent will be notified when the reviewer finishes. Use /overseer read or the overseer_read_pane tool to inspect output sooner.`, "info");
+			} catch (error) {
+				setOverseerStatus(ctx, "overseer: error");
+				ctx.ui.notify(`Could not spawn overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
 		},
 	});
 }
