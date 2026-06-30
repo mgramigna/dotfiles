@@ -338,8 +338,9 @@ export default function (pi: ExtensionAPI) {
       checks: Type.Optional(Type.String()),
     }),
     async execute(_id, params) {
-      pi.sendUserMessage(`Overseer review requested for the current orchestrator slice.\n\nImplementation summary:\n${params.summary}\n\nChecks run:\n${params.checks ?? "Not specified"}\n\nReview the current git diff against the slice requirements. If it is acceptable, call orchestrator_review_pass with a summary and commit message. If changes are required, describe the required changes, then implement them and call orchestrator_request_review again.`, { deliverAs: "followUp" });
-      return { content: [{ type: "text", text: "Queued overseer review prompt." }] };
+      pi.sendUserMessage("/overseer review", { deliverAs: "followUp" });
+      pi.sendUserMessage(`Orchestrator review requested for the current slice.\n\nImplementation summary:\n${params.summary}\n\nChecks run:\n${params.checks ?? "Not specified"}\n\nI queued /overseer review in a separate herdr pane. Wait for the overseer completion message before proceeding. When it arrives, inspect and acknowledge the overseer output.\n\nDecision rules:\n- If overseer reports VERIFIED findings, fix them, rerun relevant checks, then call orchestrator_request_review again.\n- Treat HUNCH/QUESTION items as leads: verify or explain why no change is needed.\n- Only call orchestrator_review_pass after you have seen the overseer output and either addressed or explicitly dismissed every finding.\n- If overseer reports no defensible issues and checks are acceptable, call orchestrator_review_pass with a concise summary and a Conventional Commits commit message.`, { deliverAs: "followUp" });
+      return { content: [{ type: "text", text: "Queued /overseer review and follow-up instructions." }] };
     },
   });
 
