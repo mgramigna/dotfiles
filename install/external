@@ -70,24 +70,36 @@ install_tree_sitter() {
 }
 
 install_n() {
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "Homebrew is required to install n on macOS. Install it from https://brew.sh, then rerun this command." >&2
+      exit 1
+    fi
+
+    brew list n >/dev/null 2>&1 || brew install n
+    return
+  fi
+
   local owner
   owner="$(id -un)"
 
+  if ! command -v n >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o "$tmp"
+    sudo bash "$tmp" install lts
+    rm -f "$tmp"
+  fi
+
+  # On Ubuntu, n installs into /usr/local and may leave the cache and Node.js
+  # destination directories owned by root. Ensure future n/node/npm updates can
+  # run without sudo.
   sudo mkdir -p /usr/local/n
   sudo chown -R "$owner" /usr/local/n
 
   sudo mkdir -p /usr/local/bin /usr/local/lib /usr/local/include /usr/local/share
   sudo chown -R "$owner" /usr/local/bin /usr/local/lib /usr/local/include /usr/local/share
 
-  if command -v n >/dev/null 2>&1; then
-    n lts
-    return
-  fi
-
-  tmp="$(mktemp)"
-  curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o "$tmp"
-  sudo bash "$tmp" install lts
-  rm -f "$tmp"
+  n lts
 }
 
 install_atuin() {

@@ -58,7 +58,7 @@ Fast-moving tools or tools with installer-specific behavior are handled in `inst
 - starship
 - rustup
 - tree-sitter-cli
-- n
+- n and Node.js LTS on Ubuntu; Homebrew installs `n` on macOS
 - atuin
 - bob
 - tailscale
