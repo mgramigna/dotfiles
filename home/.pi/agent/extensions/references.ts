@@ -31,6 +31,8 @@ const REFERENCES_HELP = `References commands:
   Clone or update all references, or only one reference. Names may be passed with or without #.
 - /references add <name> <git-url> <description>
   Add or replace a reference in ~/.pi/agent/references.json. Run sync afterward to clone it.
+- /references ensure <package-name-or-url> [description]
+  Resolve an npm package's repository (or use a git URL), add it if needed, and sync it immediately.
 - /references help
   Show this help.
 
@@ -109,6 +111,54 @@ function stripMentionPrefix(name: string) {
 	return name.replace(/^#/, "");
 }
 
+function referenceNameFromPackageName(packageName: string) {
+	return slugify(packageName.replace(/^@/, "").replace(/\//g, "-"));
+}
+
+function normalizeGitUrl(url: string) {
+	return url
+		.replace(/^git\+/, "")
+		.replace(/^git:/, "https:")
+		.replace(/^ssh:\/\/git@github\.com\//, "https://github.com/")
+		.replace(/^git@github\.com:/, "https://github.com/")
+		.replace(/\.git#.*$/, ".git")
+		.replace(/#.*$/, "");
+}
+
+async function resolveReference(input: string, description?: string): Promise<ReferenceRepo> {
+	const normalizedInput = normalizeGitUrl(input);
+	if (/^(https?:|ssh:|git@)/.test(input) || normalizedInput.endsWith(".git")) {
+		const basename = normalizedInput.split("/").pop()?.replace(/\.git$/, "") ?? input;
+		return { name: slugify(basename), url: normalizedInput, description: description ?? `Source reference for ${basename}` };
+	}
+
+	const { stdout } = await execFileAsync(
+		"npm",
+		["view", input, "name", "description", "repository.url", "homepage", "--json"],
+		{ maxBuffer: 1024 * 1024 * 2 },
+	);
+	const metadata = JSON.parse(stdout || "{}");
+	const repositoryUrl = metadata["repository.url"] ?? metadata.repository?.url ?? metadata.homepage;
+	if (!repositoryUrl) throw new Error(`No repository URL found for npm package ${input}`);
+	return {
+		name: referenceNameFromPackageName(metadata.name ?? input),
+		url: normalizeGitUrl(repositoryUrl),
+		description: description ?? metadata.description ?? `Source reference for npm package ${input}`,
+	};
+}
+
+async function ensureReference(input: string, description?: string) {
+	const ref = await resolveReference(input, description);
+	const config = await loadConfig();
+	config.references ??= [];
+	const existing = config.references.find((candidate) => candidate.name === ref.name || candidate.url === ref.url);
+	const nextRef = existing ? { ...existing, ...ref, description: existing.description || ref.description } : ref;
+	config.references = config.references.filter((candidate) => candidate.name !== nextRef.name && candidate.url !== nextRef.url);
+	config.references.push(nextRef);
+	await saveConfig(config);
+	return await syncReference(nextRef);
+}
+
 function matchingReferences(prompt: string, references: ReferenceRepo[]) {
 	const lower = prompt.toLowerCase();
 	return references.filter((ref) => {
@@ -170,11 +220,10 @@ export default function (pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event) => {
 		const config = await loadConfig();
 		const references = config.references ?? [];
-		if (references.length === 0) return;
 
 		const matches = matchingReferences(event.prompt, references);
 		const list = formatReferenceList(matches.length > 0 ? matches : references);
-		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash.\n\nReference lookup policy:\n- For questions about external framework/library internals, behavior, APIs, generators, routing, GraphQL, Vite, CLI behavior, or source code, prefer these cloned reference repositories over node_modules.\n- If a configured reference matches the project/topic, inspect the cloned source before looking in node_modules.\n- Use node_modules only as a fallback or when the task specifically depends on the installed package version/build artifacts.\n- Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
+		const extra = `\n\nReference repositories are available for external projects. They are cloned outside this workspace and are safe to inspect with read, ffgrep, fffind, ast-grep, or bash.\n\nReference lookup policy:\n- For questions about external framework/library internals, behavior, APIs, generators, routing, GraphQL, Vite, CLI behavior, or source code, prefer these cloned reference repositories over node_modules.\n- If a configured reference matches the project/topic, inspect the cloned source before looking in node_modules.\n- Before inspecting node_modules for an open-source npm package that is not already configured below, call the reference_repos tool with action=\"ensure\" and name=<npm-package-name>. This resolves the package repository, adds it to references.json, syncs it, and makes future sessions aware of it.\n- Use node_modules only as a fallback when no source repository can be resolved, or when the task specifically depends on installed-package build artifacts or exact installed version.\n- Do not edit reference repositories unless explicitly asked.\n\nConfigured references:\n${list}`;
 		return { systemPrompt: event.systemPrompt + extra };
 	});
 
@@ -216,6 +265,16 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (action === "ensure") {
+				const [input, ...descriptionParts] = rest;
+				if (!input) {
+					ctx.ui.notify("Usage: /references ensure <package-name-or-url> [description]", "warning");
+					return;
+				}
+				ctx.ui.notify(await ensureReference(input, descriptionParts.join(" ") || undefined), "info");
+				return;
+			}
+
 			ctx.ui.notify(REFERENCES_HELP, "warning");
 		},
 	});
@@ -229,14 +288,19 @@ export default function (pi: ExtensionAPI) {
 			"Use reference_repos to list configured external codebase references when the user #mentions a reference or asks about external framework/source code.",
 		],
 		parameters: Type.Object({
-			action: Type.Union([Type.Literal("list"), Type.Literal("sync")]),
-			name: Type.Optional(Type.String({ description: "Optional reference name for sync" })),
+			action: Type.Union([Type.Literal("list"), Type.Literal("sync"), Type.Literal("ensure")]),
+			name: Type.Optional(Type.String({ description: "Reference name for sync, or npm package/git URL for ensure" })),
+			description: Type.Optional(Type.String({ description: "Optional description to use when ensuring a new reference" })),
 		}),
 		async execute(_toolCallId, params) {
 			const config = await loadConfig();
 			const references = config.references ?? [];
 			if (params.action === "list") {
 				return { content: [{ type: "text", text: formatReferenceList(references) }] };
+			}
+			if (params.action === "ensure") {
+				if (!params.name) return { content: [{ type: "text", text: "Missing npm package name or git URL." }] };
+				return { content: [{ type: "text", text: await ensureReference(params.name, params.description) }] };
 			}
 			const refs = params.name ? references.filter((ref) => ref.name === stripMentionPrefix(params.name)) : references;
 			const results = [];
