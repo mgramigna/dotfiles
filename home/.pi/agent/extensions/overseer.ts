@@ -104,13 +104,11 @@ function timestamp(): string {
 	return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-async function writeReviewPrompt(ctx: ExtensionContext): Promise<string> {
-	await mkdir(RUN_DIR, { recursive: true });
+async function reviewPromptBody(ctx: ExtensionContext): Promise<string> {
 	const changed = await gitOrEmpty(ctx.cwd, ["diff", "--name-only"]);
 	const stat = await gitOrEmpty(ctx.cwd, ["diff", "--stat"]);
 	const diff = await gitOrEmpty(ctx.cwd, ["diff", "--no-ext-diff"]);
-	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
-	const body = [
+	return [
 		"# Overseer review request",
 		"",
 		`Working directory: ${ctx.cwd}`,
@@ -131,8 +129,47 @@ async function writeReviewPrompt(ctx: ExtensionContext): Promise<string> {
 		"```",
 		"",
 	].join("\n");
-	await writeFile(promptPath, body, "utf8");
+}
+
+async function writeReviewPrompt(ctx: ExtensionContext): Promise<string> {
+	await mkdir(RUN_DIR, { recursive: true });
+	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
+	await writeFile(promptPath, await reviewPromptBody(ctx), "utf8");
 	return promptPath;
+}
+
+function confidenceCounts(text: string) {
+	return {
+		verified: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*VERIFIED\b/gi)].length,
+		hunch: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*HUNCH\b/gi)].length,
+		question: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*QUESTION\b/gi)].length,
+	};
+}
+
+async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string) {
+	await mkdir(RUN_DIR, { recursive: true });
+	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
+	await writeFile(promptPath, await reviewPromptBody(ctx), "utf8");
+	const selectedModel = modelArg(ctx);
+	const args = ["-p", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files"];
+	if (selectedModel) args.push("--model", selectedModel);
+	args.push("--name", "overseer review", "--system-prompt", REVIEW_SYSTEM_PROMPT, `@${promptPath}`);
+	const output = await execText("pi", args, ctx.cwd, REVIEW_WAIT_TIMEOUT_MS);
+	const findings = extractReviewFindings(output);
+	const counts = confidenceCounts(findings);
+	const artifact = {
+		version: 1,
+		cwd: ctx.cwd,
+		promptPath,
+		createdAt: new Date().toISOString(),
+		status: counts.verified > 0 ? "needs_resolution" : "passed",
+		counts,
+		findings,
+		output,
+	};
+	const path = artifactPath || join(RUN_DIR, `artifact-${timestamp()}.json`);
+	await writeFile(path, JSON.stringify(artifact, null, 2) + "\n", "utf8");
+	return { path, artifact };
 }
 
 async function spawnReviewPane(ctx: ExtensionContext): Promise<OverseerState> {
@@ -248,6 +285,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		// The reviewer pane is intentionally left running; it is a visible, independent pi session.
+	});
+
+	pi.registerTool({
+		name: "overseer_review",
+		label: "Overseer review",
+		description: "Run headless overseer review for the current uncommitted diff and persist a structured artifact.",
+		parameters: Type.Object({
+			artifactPath: Type.Optional(Type.String({ description: "Path to write review artifact JSON. Defaults under ~/.pi/agent/overseer." })),
+		}),
+		async execute(_toolCallId: string, params: { artifactPath?: string }, _signal: any, _onUpdate: unknown, ctx: ExtensionContext) {
+			const { path, artifact } = await runHeadlessReview(ctx, params.artifactPath);
+			return {
+				content: [{ type: "text", text: `Overseer review ${artifact.status}. Artifact: ${path}` }],
+				details: { path, status: artifact.status, counts: artifact.counts },
+			};
+		},
 	});
 
 	pi.registerTool({
