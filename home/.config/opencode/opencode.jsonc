@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "lsp": true,
-  "enabled_providers": ["openai", "opencode", "opencode-go"]
+  "lsp": {
+    "enabled": true
+  }
 }
