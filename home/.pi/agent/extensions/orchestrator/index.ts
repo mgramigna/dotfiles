@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 
 import {
   type OrchestratorConfig,
@@ -21,6 +21,7 @@ import {
 import {
   appendRunEvent,
   ensureRunLayout,
+  getRunDir,
   getWorkerFiles,
   loadRunState,
   readWorkerResult,
@@ -70,10 +71,15 @@ export default function (pi: {
 
       try {
         const trusted = ctx.isProjectTrusted?.() ?? true;
-        const config = await loadOrchestratorConfig({ cwd: ctx.cwd, trusted });
-        const repo = await detectGitHubRepo(ctx.cwd);
-        await ensureRun(ctx.cwd, repo, parentIssueNumber);
-        const result = await runLoop(ctx.cwd, repo, parentIssueNumber, progress.update, parsed.mode, config);
+        const result = await runOrchestratorHeadless({
+          cwd: ctx.cwd,
+          parentIssueNumber,
+          trusted,
+          mode: parsed.mode,
+          onProgress: progress.update,
+          resetMainWorktree: false,
+          freshRun: false,
+        });
         ctx.ui.notify(result, "info");
       } finally {
         progress.clear();
@@ -104,6 +110,44 @@ export default function (pi: {
       );
     },
   });
+}
+
+export async function runOrchestratorHeadless(input: {
+  cwd: string;
+  parentIssueNumber: number;
+  trusted?: boolean;
+  mode?: PiWorkerSpawnMode;
+  onProgress?: (progress: Progress) => void;
+  resetMainWorktree?: boolean;
+  freshRun?: boolean;
+}): Promise<string> {
+  if (input.resetMainWorktree ?? true) await resetMainWorktreeToDefaultBranch(input.cwd);
+  if (input.freshRun ?? true) {
+    await rm(getRunDir(input.cwd, `prd-${input.parentIssueNumber}`), { recursive: true, force: true });
+  }
+
+  const config = await loadOrchestratorConfig({
+    cwd: input.cwd,
+    trusted: input.trusted ?? true,
+  });
+  const repo = await detectGitHubRepo(input.cwd);
+  await ensureRun(input.cwd, repo, input.parentIssueNumber);
+
+  return runLoop(
+    input.cwd,
+    repo,
+    input.parentIssueNumber,
+    input.onProgress ?? (() => undefined),
+    input.mode ?? "background",
+    config,
+  );
+}
+
+async function resetMainWorktreeToDefaultBranch(cwd: string): Promise<void> {
+  await runCommand("git", ["fetch", "origin"], { cwd });
+  const trunkBranch = await getTrunkBranch(cwd);
+  await runCommand("git", ["switch", trunkBranch], { cwd });
+  await runCommand("git", ["reset", "--hard", `origin/${trunkBranch}`], { cwd });
 }
 
 async function runDoctor(ctx: CommandContext): Promise<string> {
@@ -652,7 +696,7 @@ function parseArgs(args: string): { issue: string | undefined; mode: PiWorkerSpa
   };
 }
 
-function parseIssueNumber(value: string | undefined): number | undefined {
+export function parseIssueNumber(value: string | undefined): number | undefined {
   if (!value) return undefined;
 
   const issueNumber = Number(value.match(/(?:issues\/|#)?(\d+)(?:\D*)$/)?.[1] ?? value);

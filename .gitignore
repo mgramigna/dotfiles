@@ -2,6 +2,7 @@ backups/*-backup-*
 home/.zshrc.local
 home/.config/tmux/plugins
 macos/.config/karabiner/automatic_backups
+home/.config/pi-orchestrator-web/env
 
 # Pi local state / secrets
 home/.pi/agent/auth.json

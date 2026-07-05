@@ -1,0 +1,19 @@
+[Unit]
+Description=Pi orchestrator web UI
+Documentation=file:/home/mg/.pi/agent/extensions/orchestrator/WEB_UI.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/pi-orchestrator-web/env
+WorkingDirectory=%h
+ExecStart=/usr/bin/env npx --yes tsx %h/.pi/agent/extensions/orchestrator/web-server.ts
+Restart=on-failure
+RestartSec=5
+
+# Keep credentials/config in the user account, not a system service account.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
