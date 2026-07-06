@@ -6,6 +6,7 @@ home/.config/pi-orchestrator-web/env
 
 # Pi local state / secrets
 home/.pi/agent/auth.json
+home/.pi/agent/settings.json
 home/.pi/agent/sessions/
 home/.pi/agent/bin/
 home/.pi/agent/npm/node_modules/
