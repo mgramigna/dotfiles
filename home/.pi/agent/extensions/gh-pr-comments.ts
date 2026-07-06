@@ -181,6 +181,31 @@ async function getReviewThreadComments(cwd: string, prNumber: number): Promise<P
 	});
 }
 
+async function choosePrompt(ctx: ExtensionCommandContext): Promise<string | null> {
+	const implementPrompt = "Resolve the requested feedback in the codebase, then summarize what changed.";
+	const discussPrefix = "Do not implement anything. Do not modify files. Treat the selected PR comments as context for discussion only.";
+	const discussPlaceholder = "Explain what these comments mean and suggest options for addressing them.";
+	const implementChoice = "Implement fixes";
+	const discussChoice = "Discuss only / no code changes";
+	const select = (ctx.ui as any).select as ((title: string, choices: string[]) => Promise<string | undefined>) | undefined;
+	const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
+
+	const choice = select
+		? await select("Choose prompt for selected PR comments", [implementChoice, discussChoice, "Cancel"])
+		: implementChoice;
+
+	if (!choice || choice === "Cancel") return null;
+	if (choice === implementChoice) return implementPrompt;
+
+	if (!input) {
+		ctx.ui.notify("Discuss-only prompts require a UI input prompt in this Pi build", "error");
+		return null;
+	}
+
+	const userPrompt = (await input("What would you like to ask about these PR comments?", discussPlaceholder))?.trim();
+	return userPrompt ? `${discussPrefix}\n\n${userPrompt}` : null;
+}
+
 async function chooseComments(ctx: ExtensionCommandContext, comments: PrComment[]): Promise<PrComment[]> {
 	const selected = new Set<string>();
 	const resolvedCount = comments.filter((comment) => comment.resolved).length;
@@ -292,9 +317,15 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			const selectedPrompt = await choosePrompt(ctx);
+			if (!selectedPrompt) {
+				ctx.ui.notify("No prompt selected", "info");
+				return;
+			}
+
 			const prompt = [
 				`Address this PR comment${selected.length === 1 ? "" : "s"} on ${pr.url}.`,
-				"Resolve the requested feedback in the codebase, then summarize what changed.",
+				selectedPrompt,
 				...selected.map(commentPrompt),
 			].join("\n\n---\n\n");
 
