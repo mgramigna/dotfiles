@@ -22,6 +22,7 @@ interface ReferencesConfig {
 }
 
 const configPath = path.join(homedir(), ".pi", "agent", "references.json");
+const projectConfigPath = path.join(process.cwd(), ".pi", "references.json");
 const defaultReposDir = path.join(homedir(), ".local", "share", "pi", "references");
 
 function textToolResult(text: string): AgentToolResult<unknown> {
@@ -34,13 +35,21 @@ const REFERENCES_HELP = `References commands:
 - /references sync [name]
   Clone or update all references, or only one reference. Names may be passed with or without #.
 - /references add <name> <git-url> <description>
-  Add or replace a reference in ~/.pi/agent/references.json. Run sync afterward to clone it.
+  Add or replace a user reference in ~/.pi/agent/references.json. Run sync afterward to clone it.
+  Example: /references add react https://github.com/facebook/react.git React source code
+- /references remove <name>
+  Remove a user reference. Names may be passed with or without #.
 - /references ensure <package-name-or-url> [description]
-  Resolve an npm package's repository (or use a git URL), add it if needed, and sync it immediately.
+  Resolve an npm package's repository (or use a git URL), add it to the user config if needed, and sync it immediately.
+  Examples:
+    /references ensure vite
+    /references ensure https://github.com/mui/base-ui.git Base UI source code
 - /references help
   Show this help.
 
-Reference repos are injected into agent context so #mentions and framework/source-code questions can use them. They live outside the current workspace and should be read-only unless explicitly requested.`;
+Reference repos are loaded from ~/.pi/agent/references.json and, when present, the shared project config at .pi/references.json. User references override project references with the same name or URL, and add/remove/ensure write only to the user config.
+
+Reference repos are injected into agent context so #mentions and framework/source-code questions can use them. Type # in the prompt to autocomplete configured references, such as #react or #vite. They live outside the current workspace and should be read-only unless explicitly requested.`;
 
 function slugify(name: string) {
 	return name
@@ -62,15 +71,77 @@ async function pathExists(p: string) {
 	}
 }
 
-async function loadConfig(): Promise<ReferencesConfig> {
+function briefTechnicalDetail(error: unknown) {
+	if (!(error instanceof Error)) return String(error);
+	const maybeExec = error as Error & { code?: unknown; stderr?: string; stdout?: string };
+	const detail = maybeExec.stderr?.trim() || maybeExec.stdout?.trim() || error.message;
+	const code = maybeExec.code ? ` (exit ${maybeExec.code})` : "";
+	return `${detail}${code}`.split("\n").slice(0, 4).join("\n");
+}
+
+function friendlyError(message: string, error: unknown) {
+	return new Error(`${message}\n\nDetails: ${briefTechnicalDetail(error)}`);
+}
+
+async function execFileFriendly(command: string, args: string[], userMessage: string) {
 	try {
-		return JSON.parse(await readFile(configPath, "utf8"));
+		return await execFileAsync(command, args, { maxBuffer: 1024 * 1024 * 10 });
+	} catch (error) {
+		throw friendlyError(userMessage, error);
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isReferenceRepo(value: unknown): value is ReferenceRepo {
+	return isRecord(value)
+		&& typeof value.name === "string"
+		&& typeof value.url === "string"
+		&& typeof value.description === "string"
+		&& (value.branch === undefined || typeof value.branch === "string")
+		&& (value.path === undefined || typeof value.path === "string");
+}
+
+function parseConfig(contents: string): ReferencesConfig {
+	const parsed: unknown = JSON.parse(contents);
+	if (!isRecord(parsed)) throw new Error("Expected a JSON object.");
+	const references = parsed.references;
+	if (references === undefined) return { references: [] };
+	if (!Array.isArray(references) || !references.every(isReferenceRepo)) {
+		throw new Error("Expected references to be an array of { name, url, description, branch?, path? } objects.");
+	}
+	return { references };
+}
+
+async function loadConfigFrom(filePath: string): Promise<ReferencesConfig> {
+	try {
+		return parseConfig(await readFile(filePath, "utf8"));
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 			return { references: [] };
 		}
-		throw error;
+		throw friendlyError(`Couldn't read reference repository configuration at ${filePath}. Check that it is valid JSON.`, error);
 	}
+}
+
+async function loadUserConfig(): Promise<ReferencesConfig> {
+	return loadConfigFrom(configPath);
+}
+
+function mergeReferences(projectReferences: ReferenceRepo[], userReferences: ReferenceRepo[]) {
+	const userNames = new Set(userReferences.map((ref) => ref.name));
+	const userUrls = new Set(userReferences.map((ref) => ref.url));
+	return [
+		...projectReferences.filter((ref) => !userNames.has(ref.name) && !userUrls.has(ref.url)),
+		...userReferences,
+	];
+}
+
+async function loadConfig(): Promise<ReferencesConfig> {
+	const [projectConfig, userConfig] = await Promise.all([loadConfigFrom(projectConfigPath), loadUserConfig()]);
+	return { references: mergeReferences(projectConfig.references ?? [], userConfig.references ?? []) };
 }
 
 async function saveConfig(config: ReferencesConfig) {
@@ -86,24 +157,28 @@ async function syncReference(ref: ReferenceRepo) {
 		const args = ["clone", "--depth", "1"];
 		if (ref.branch) args.push("--branch", ref.branch);
 		args.push(ref.url, target);
-		await execFileAsync("git", args, { maxBuffer: 1024 * 1024 * 10 });
+		await execFileFriendly("git", args, `Couldn't clone reference #${ref.name} from ${ref.url}.`);
 		return `cloned ${ref.name} -> ${target}`;
 	}
 
-	await execFileAsync("git", ["-C", target, "fetch", "--depth", "1", "origin"], {
-		maxBuffer: 1024 * 1024 * 10,
-	});
+	await execFileFriendly("git", ["-C", target, "fetch", "--depth", "1", "origin"], `Couldn't fetch updates for reference #${ref.name} at ${target}.`);
 	const branch = ref.branch ?? "HEAD";
 	await execFileAsync("git", ["-C", target, "checkout", branch], { maxBuffer: 1024 * 1024 * 10 }).catch(
 		() => undefined,
 	);
-	await execFileAsync("git", ["-C", target, "pull", "--ff-only"], { maxBuffer: 1024 * 1024 * 10 });
+	await execFileFriendly("git", ["-C", target, "pull", "--ff-only"], `Couldn't update reference #${ref.name} at ${target}.`);
 	return `updated ${ref.name} at ${target}`;
 }
 
 function formatReferenceList(references: ReferenceRepo[]) {
 	if (references.length === 0) {
-		return `No reference repositories configured yet. Add entries to ${configPath}.`;
+		return `No reference repositories configured yet.
+
+Get started with one of these commands:
+- /references ensure vite
+- /references add react https://github.com/facebook/react.git React source code
+
+After adding references, type # in the prompt to autocomplete #mentions. User configuration is stored in ${configPath}; shared project references can be stored in ${projectConfigPath}.`;
 	}
 
 	return references
@@ -136,14 +211,19 @@ async function resolveReference(input: string, description?: string): Promise<Re
 		return { name: slugify(basename), url: normalizedInput, description: description ?? `Source reference for ${basename}` };
 	}
 
-	const { stdout } = await execFileAsync(
+	const { stdout } = await execFileFriendly(
 		"npm",
 		["view", input, "name", "description", "repository.url", "homepage", "--json"],
-		{ maxBuffer: 1024 * 1024 * 2 },
+		`Couldn't look up npm package "${input}". Check the package name and your npm/network access.`,
 	);
-	const metadata = JSON.parse(stdout || "{}");
+	let metadata: Record<string, any>;
+	try {
+		metadata = JSON.parse(stdout || "{}");
+	} catch (error) {
+		throw friendlyError(`npm returned invalid JSON while resolving "${input}".`, error);
+	}
 	const repositoryUrl = metadata["repository.url"] ?? metadata.repository?.url ?? metadata.homepage;
-	if (!repositoryUrl) throw new Error(`No repository URL found for npm package ${input}`);
+	if (!repositoryUrl) throw new Error(`Couldn't find a repository URL for npm package "${input}". Try passing a git URL directly.`);
 	return {
 		name: referenceNameFromPackageName(metadata.name ?? input),
 		url: normalizeGitUrl(repositoryUrl),
@@ -153,7 +233,7 @@ async function resolveReference(input: string, description?: string): Promise<Re
 
 async function ensureReference(input: string, description?: string) {
 	const ref = await resolveReference(input, description);
-	const config = await loadConfig();
+	const config = await loadUserConfig();
 	config.references ??= [];
 	const existing = config.references.find((candidate) => candidate.name === ref.name || candidate.url === ref.url);
 	const nextRef = existing ? { ...existing, ...ref, description: existing.description || ref.description } : ref;
@@ -232,7 +312,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("references", {
-		description: "List, add, sync, or show help for reference repositories",
+		description: "List, add, remove, sync, or show help for reference repositories",
 		handler: async (args, ctx) => {
 			const [action, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			if (action === "help" || action === "--help" || action === "-h") {
@@ -240,7 +320,13 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const config = await loadConfig();
+			let config: ReferencesConfig;
+			try {
+				config = await loadConfig();
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				return;
+			}
 			config.references ??= [];
 
 			if (!action || action === "list") {
@@ -251,7 +337,15 @@ export default function (pi: ExtensionAPI) {
 			if (action === "sync") {
 				const wanted = rest[0] ? stripMentionPrefix(rest[0]) : undefined;
 				const refs = wanted ? config.references.filter((ref) => ref.name === wanted) : config.references;
-				for (const ref of refs) ctx.ui.notify(await syncReference(ref), "info");
+				if (wanted && refs.length === 0) {
+					ctx.ui.notify(`No reference repository named #${wanted} is configured. Run /references list to see available references.`, "warning");
+					return;
+				}
+				try {
+					for (const ref of refs) ctx.ui.notify(await syncReference(ref), "info");
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
 				return;
 			}
 
@@ -262,10 +356,31 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("Usage: /references add <name> <git-url> <description>", "warning");
 					return;
 				}
-				config.references = config.references.filter((ref) => ref.name !== name);
-				config.references.push({ name, url, description: descriptionParts.join(" ") });
-				await saveConfig(config);
-				ctx.ui.notify(`Added #${name}. Run /references sync ${name} to clone it.`, "info");
+				const userConfig = await loadUserConfig();
+				userConfig.references ??= [];
+				userConfig.references = userConfig.references.filter((ref) => ref.name !== name);
+				userConfig.references.push({ name, url, description: descriptionParts.join(" ") });
+				await saveConfig(userConfig);
+				ctx.ui.notify(`Added #${name} to the user config. Run /references sync ${name} to clone it.`, "info");
+				return;
+			}
+
+			if (action === "remove") {
+				const name = rest[0] ? stripMentionPrefix(rest[0]) : undefined;
+				if (!name) {
+					ctx.ui.notify("Usage: /references remove <name>", "warning");
+					return;
+				}
+				const userConfig = await loadUserConfig();
+				userConfig.references ??= [];
+				const nextReferences = userConfig.references.filter((ref) => ref.name !== name);
+				if (nextReferences.length === userConfig.references.length) {
+					ctx.ui.notify(`No user reference repository named #${name} is configured. Project references in ${projectConfigPath} cannot be removed with this command.`, "warning");
+					return;
+				}
+				userConfig.references = nextReferences;
+				await saveConfig(userConfig);
+				ctx.ui.notify(`Removed #${name} from the user config.`, "info");
 				return;
 			}
 
@@ -275,7 +390,11 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify("Usage: /references ensure <package-name-or-url> [description]", "warning");
 					return;
 				}
-				ctx.ui.notify(await ensureReference(input, descriptionParts.join(" ") || undefined), "info");
+				try {
+					ctx.ui.notify(await ensureReference(input, descriptionParts.join(" ") || undefined), "info");
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+				}
 				return;
 			}
 
@@ -287,7 +406,7 @@ export default function (pi: ExtensionAPI) {
 		name: "reference_repos",
 		label: "Reference Repos",
 		description: "List or sync configured external reference repositories",
-		promptSnippet: "List or sync external reference repositories configured for this user",
+		promptSnippet: "List or sync external reference repositories configured for this user and project",
 		promptGuidelines: [
 			"Use reference_repos to list configured external codebase references when the user #mentions a reference or asks about external framework/source code.",
 		],
@@ -297,20 +416,28 @@ export default function (pi: ExtensionAPI) {
 			description: Type.Optional(Type.String({ description: "Optional description to use when ensuring a new reference" })),
 		}),
 		async execute(_toolCallId, params) {
-			const config = await loadConfig();
-			const references = config.references ?? [];
-			if (params.action === "list") {
-				return textToolResult(formatReferenceList(references));
+			try {
+				const config = await loadConfig();
+				const references = config.references ?? [];
+				if (params.action === "list") {
+					return textToolResult(formatReferenceList(references));
+				}
+				if (params.action === "ensure") {
+					if (!params.name) return textToolResult("Missing npm package name or git URL.");
+					return textToolResult(await ensureReference(params.name, params.description));
+				}
+				const name = params.name;
+				const wanted = name ? stripMentionPrefix(name) : undefined;
+				const refs = wanted ? references.filter((ref) => ref.name === wanted) : references;
+				if (wanted && refs.length === 0) {
+					return textToolResult(`Warning: no reference repository named #${wanted} is configured. Use action="list" to see available references.`);
+				}
+				const results = [];
+				for (const ref of refs) results.push(await syncReference(ref));
+				return textToolResult(results.join("\n") || "No matching references.");
+			} catch (error) {
+				return textToolResult(error instanceof Error ? error.message : String(error));
 			}
-			if (params.action === "ensure") {
-				if (!params.name) return textToolResult("Missing npm package name or git URL.");
-				return textToolResult(await ensureReference(params.name, params.description));
-			}
-			const name = params.name;
-			const refs = name ? references.filter((ref) => ref.name === stripMentionPrefix(name)) : references;
-			const results = [];
-			for (const ref of refs) results.push(await syncReference(ref));
-			return textToolResult(results.join("\n") || "No matching references.");
 		},
 	});
 }
