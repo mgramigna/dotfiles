@@ -22,6 +22,15 @@ function buildMessage(diff: string, prompt?: unknown) {
 }
 
 export default function (pi: ExtensionAPI) {
+  pi.registerCommand("summary", {
+    description: "Ask the agent to summarize changed files and modified symbols",
+    handler: async (_args, ctx) => {
+      await ctx.waitForIdle();
+
+      pi.sendUserMessage("Summarize which files changed and the functions/types modified in each");
+    },
+  });
+
   pi.registerCommand("diff", {
     description: "Send the current unstaged git diff to the agent, optionally prefixed by a prompt",
     handler: async (args, ctx) => {
