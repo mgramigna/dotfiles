@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -50,6 +50,7 @@ const HELP = `Overseer commands:
 - /overseer pane              Show the last recorded overseer pane id.
 - /overseer read [n]          Read recent output from the overseer pane.
 - /overseer doctor            Check overseer setup and config.
+- /overseer setup             Interactively create an overseer config if one does not exist.
 - /overseer help              Show this help.
 
 By default, overseer runs headlessly as a sub-agent and returns a structured artifact for the main agent to inspect and act on. Use --headed when you explicitly want a visible herdr pane.`;
@@ -81,18 +82,30 @@ function getConfigPath(cwd: string): string {
 	return join(cwd, ".pi", "overseer.json");
 }
 
+function getGlobalConfigPath(): string {
+	return join(getAgentDir(), "overseer.json");
+}
+
+function getConfigDir(path: string): string {
+	return dirname(path);
+}
+
 function isProjectTrusted(ctx: ExtensionContext): boolean {
 	return (ctx as any).isProjectTrusted?.() ?? true;
 }
 
 async function loadOverseerConfig(ctx: ExtensionContext): Promise<OverseerConfig> {
-	if (!isProjectTrusted(ctx)) return defaultOverseerConfig;
+	const globalConfig = await loadOptionalConfig(getGlobalConfigPath());
+	const projectConfig = isProjectTrusted(ctx) ? await loadOptionalConfig(getConfigPath(ctx.cwd)) : undefined;
+	return { ...defaultOverseerConfig, ...globalConfig, ...projectConfig };
+}
 
+async function loadOptionalConfig(path: string): Promise<OverseerConfig | undefined> {
 	let raw: string;
 	try {
-		raw = await readFile(getConfigPath(ctx.cwd), "utf8");
+		raw = await readFile(path, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultOverseerConfig;
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
 	}
 
@@ -101,9 +114,11 @@ async function loadOverseerConfig(ctx: ExtensionContext): Promise<OverseerConfig
 
 function parseOverseerConfig(value: unknown): OverseerConfig {
 	if (!isRecord(value)) throw new Error("overseer config must be an object");
+	const model = parseOptionalString(value.model, "model");
+	const thinking = parseOptionalThinkingLevel(value.thinking);
 	return {
-		model: parseOptionalString(value.model, "model"),
-		thinking: parseOptionalThinkingLevel(value.thinking),
+		...(model !== undefined ? { model } : {}),
+		...(thinking !== undefined ? { thinking } : {}),
 	};
 }
 
@@ -341,18 +356,107 @@ async function runDoctor(ctx: ExtensionContext): Promise<string> {
 	checks.push(await doctorCheck("pi", async () => {
 		await execText("pi", ["--help"], ctx.cwd, 10_000);
 	}));
-	checks.push(trusted ? "ok project trusted" : "warn project not trusted; .pi/overseer.json ignored");
-	checks.push(await doctorCheck(`config ${getConfigPath(ctx.cwd)}`, async () => {
-		await loadOverseerConfig(ctx);
-	}));
+	checks.push(trusted ? "ok project trusted" : "warn project not trusted; project .pi/overseer.json ignored");
+	const globalPath = getGlobalConfigPath();
+	const projectPath = getConfigPath(ctx.cwd);
+	const globalExists = await configExists(globalPath);
+	const projectExists = trusted ? await configExists(projectPath) : false;
+
+	checks.push(globalExists
+		? await doctorCheck(`global config ${globalPath}`, async () => {
+			await loadOptionalConfig(globalPath);
+		})
+		: `warn global config not found ${globalPath}`);
+	checks.push(!trusted
+		? `warn project config ignored ${projectPath}`
+		: projectExists
+			? await doctorCheck(`project config ${projectPath}`, async () => {
+				await loadOptionalConfig(projectPath);
+			})
+			: `ok no project config ${projectPath}`);
 
 	const config = await loadOverseerConfig(ctx).catch(() => undefined);
 	if (config) {
+		const sources = ["defaults", globalExists ? "global" : undefined, projectExists ? "project" : undefined]
+			.filter((source): source is string => Boolean(source));
+		checks.push(`ok config sources ${sources.join(" + ")}`);
 		checks.push(config.model ? `ok model ${config.model}` : `ok model ${modelArg(ctx, config) ?? "default"}`);
 		checks.push(config.thinking ? `ok thinking ${config.thinking}` : "ok thinking default");
 	}
 
 	return ["overseer doctor", ...checks].join("\n");
+}
+
+async function configExists(path: string): Promise<boolean> {
+	try {
+		await readFile(path, "utf8");
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+async function listAvailableModels(cwd: string): Promise<string[]> {
+	const output = await execText("pi", ["--list-models"], cwd, 30_000);
+	return output.split("\n").slice(1).map((line) => {
+		const [provider, model] = line.trim().split(/\s+/);
+		return provider && model ? `${provider}/${model}` : undefined;
+	}).filter((model): model is string => Boolean(model));
+}
+
+async function runSetup(ctx: ExtensionContext): Promise<string> {
+	const select = (ctx.ui as any).select as ((title: string, choices: string[]) => Promise<string | undefined>) | undefined;
+	const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
+	if (!select) return "Overseer setup requires a UI select prompt, but this Pi build does not expose one.";
+
+	const projectPath = getConfigPath(ctx.cwd);
+	const globalPath = getGlobalConfigPath();
+	const scopeChoices = [
+		`Global (${globalPath})`,
+		`Project (${projectPath})`,
+		"Cancel",
+	];
+	const scope = await select("Create overseer config", scopeChoices);
+	if (!scope || scope === "Cancel") return "Overseer setup cancelled.";
+	if (scope.startsWith("Project") && !isProjectTrusted(ctx)) return "Project is not trusted; refusing to write project .pi/overseer.json.";
+
+	const path = scope.startsWith("Global") ? globalPath : projectPath;
+	if (await configExists(path)) return `Overseer config already exists at ${path}; no changes made.`;
+
+	const currentModel = modelArg(ctx, defaultOverseerConfig);
+	const models = await listAvailableModels(ctx.cwd);
+	const modelChoices = [
+		...(currentModel ? [`Use current model (${currentModel})`] : []),
+		...models,
+		"Enter manually",
+		"Cancel",
+	];
+	const modelChoice = await select("Overseer model", modelChoices);
+	if (!modelChoice || modelChoice === "Cancel") return "Overseer setup cancelled.";
+
+	let model: string | undefined;
+	if (modelChoice === "Enter manually") {
+		if (!input) return "Manual model entry requires a UI input prompt, but this Pi build does not expose one.";
+		model = (await input("Overseer model", "provider/model-id"))?.trim();
+		if (!model) return "Overseer setup cancelled.";
+	} else if (modelChoice.startsWith("Use current model (")) {
+		model = currentModel;
+	} else {
+		model = modelChoice;
+	}
+
+	const thinkingChoice = await select("Overseer thinking level", ["Default", ...THINKING_LEVELS, "Cancel"]);
+	if (!thinkingChoice || thinkingChoice === "Cancel") return "Overseer setup cancelled.";
+	const thinking = thinkingChoice === "Default" ? undefined : parseOptionalThinkingLevel(thinkingChoice);
+	const config: OverseerConfig = {
+		...(model ? { model } : {}),
+		...(thinking ? { thinking } : {}),
+	};
+
+	await mkdir(getConfigDir(path), { recursive: true });
+	await writeFile(path, JSON.stringify(config, null, 2) + "\n", "utf8");
+	return `Created overseer config at ${path}.`;
 }
 
 function monitorReviewer(pi: ExtensionAPI, ctx: ExtensionContext, paneId: string, promptPath: string | undefined, token: number): void {
@@ -426,7 +530,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Overseer adversarial review: review [--headed], pane, read, doctor, help",
+		description: "Overseer adversarial review: review [--headed], pane, read, doctor, setup, help",
 		handler: async (args: string, ctx: ExtensionContext) => {
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const command = tokens[0]?.startsWith("--") ? "review" : tokens[0] || "review";
@@ -446,6 +550,11 @@ export default function (pi: ExtensionAPI) {
 
 			if (command === "doctor") {
 				ctx.ui.notify(await runDoctor(ctx), "info");
+				return;
+			}
+
+			if (command === "setup") {
+				ctx.ui.notify(await runSetup(ctx), "info");
 				return;
 			}
 

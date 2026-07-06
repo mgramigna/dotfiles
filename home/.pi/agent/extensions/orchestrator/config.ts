@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+
 export type OrchestratorCheck = {
   name: string;
   command: string;
@@ -25,57 +27,79 @@ export function getConfigPath(cwd: string): string {
   return join(cwd, ".pi", "orchestrator.json");
 }
 
+export function getGlobalConfigPath(): string {
+  return join(getAgentDir(), "orchestrator.json");
+}
+
+type PartialOrchestratorConfig = Partial<OrchestratorConfig>;
+
 export async function loadOrchestratorConfig(input: {
   cwd: string;
   trusted: boolean;
 }): Promise<OrchestratorConfig> {
-  if (!input.trusted) return defaultOrchestratorConfig;
+  const globalConfig = await loadOptionalConfig(getGlobalConfigPath());
+  const projectConfig = input.trusted ? await loadOptionalConfig(getConfigPath(input.cwd)) : undefined;
+  return { ...defaultOrchestratorConfig, ...globalConfig, ...projectConfig };
+}
 
+export async function loadOptionalConfig(path: string): Promise<PartialOrchestratorConfig | undefined> {
   let raw: string;
   try {
-    raw = await readFile(getConfigPath(input.cwd), "utf8");
+    raw = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultOrchestratorConfig;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
 
-  return parseOrchestratorConfig(JSON.parse(raw));
+  return parsePartialOrchestratorConfig(JSON.parse(raw));
 }
 
 export function parseOrchestratorConfig(value: unknown): OrchestratorConfig {
+  return { ...defaultOrchestratorConfig, ...parsePartialOrchestratorConfig(value) };
+}
+
+function parsePartialOrchestratorConfig(value: unknown): PartialOrchestratorConfig {
   if (!isRecord(value)) throw new Error("orchestrator config must be an object");
 
-  const maxParallelValue = value.maxParallel ?? defaultOrchestratorConfig.maxParallel;
-  if (typeof maxParallelValue !== "number" || !Number.isSafeInteger(maxParallelValue) || maxParallelValue < 1) {
-    throw new Error("orchestrator config maxParallel must be a positive integer");
+  let maxParallel: number | undefined;
+  if (value.maxParallel !== undefined) {
+    if (typeof value.maxParallel !== "number" || !Number.isSafeInteger(value.maxParallel) || value.maxParallel < 1) {
+      throw new Error("orchestrator config maxParallel must be a positive integer");
+    }
+    maxParallel = value.maxParallel;
   }
 
-  const checksValue = value.checks ?? defaultOrchestratorConfig.checks;
-  if (!Array.isArray(checksValue)) throw new Error("orchestrator config checks must be an array");
+  let checks: OrchestratorCheck[] | undefined;
+  if (value.checks !== undefined) {
+    if (!Array.isArray(value.checks)) throw new Error("orchestrator config checks must be an array");
+    checks = value.checks.map((check, index): OrchestratorCheck => {
+      if (!isRecord(check)) throw new Error(`orchestrator config checks[${index}] must be an object`);
+      if (typeof check.name !== "string" || !check.name.trim()) {
+        throw new Error(`orchestrator config checks[${index}].name must be a string`);
+      }
+      if (typeof check.command !== "string" || !check.command.trim()) {
+        throw new Error(`orchestrator config checks[${index}].command must be a string`);
+      }
+      if (typeof check.required !== "boolean") {
+        throw new Error(`orchestrator config checks[${index}].required must be a boolean`);
+      }
+
+      return {
+        name: check.name,
+        command: check.command,
+        required: check.required,
+      };
+    });
+  }
 
   const model = parseOptionalString(value.model, "model");
   const thinking = parseOptionalThinkingLevel(value.thinking);
-
-  const checks = checksValue.map((check, index): OrchestratorCheck => {
-    if (!isRecord(check)) throw new Error(`orchestrator config checks[${index}] must be an object`);
-    if (typeof check.name !== "string" || !check.name.trim()) {
-      throw new Error(`orchestrator config checks[${index}].name must be a string`);
-    }
-    if (typeof check.command !== "string" || !check.command.trim()) {
-      throw new Error(`orchestrator config checks[${index}].command must be a string`);
-    }
-    if (typeof check.required !== "boolean") {
-      throw new Error(`orchestrator config checks[${index}].required must be a boolean`);
-    }
-
-    return {
-      name: check.name,
-      command: check.command,
-      required: check.required,
-    };
-  });
-
-  return { maxParallel: maxParallelValue, checks, model, thinking };
+  return {
+    ...(maxParallel !== undefined ? { maxParallel } : {}),
+    ...(checks !== undefined ? { checks } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(thinking !== undefined ? { thinking } : {}),
+  };
 }
 
 function parseOptionalString(value: unknown, key: string): string | undefined {

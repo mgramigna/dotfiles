@@ -1,9 +1,13 @@
 import { execFile } from "node:child_process";
-import { access, rm } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import {
   type OrchestratorConfig,
+  type OrchestratorThinkingLevel,
   getConfigPath,
+  getGlobalConfigPath,
+  loadOptionalConfig,
   loadOrchestratorConfig,
 } from "./config";
 import { detectGitHubRepo, fetchParentAndSlices } from "./github";
@@ -35,7 +39,9 @@ type CommandContext = {
   cwd: string;
   isProjectTrusted?: () => boolean;
   ui: {
-    notify: (message: string, level: "info" | "error") => void;
+    notify: (message: string, level: "info" | "error" | "warning" | "success") => void;
+    input?: (prompt: string, placeholder?: string) => Promise<string | undefined>;
+    select?: (title: string, choices: string[]) => Promise<string | undefined>;
     setStatus?: (key: string, value: string | undefined) => void;
     theme?: { fg: (color: "dim", text: string) => string };
     setWidget?: (
@@ -92,6 +98,32 @@ export default function (pi: {
     handler: async (_args, ctx) => {
       ctx.ui.notify(await runDoctor(ctx), "info");
     },
+  });
+
+  pi.registerCommand("orchestrate-setup", {
+    description: "Create .pi/orchestrator.json interactively if it does not exist",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(await runSetup(ctx), "info");
+    },
+  });
+
+  const setupCommand = async (args: string, ctx: CommandContext) => {
+    const command = args.trim().split(/\s+/).filter(Boolean)[0] || "help";
+    if (command !== "setup") {
+      ctx.ui.notify("Usage: /orchestrator setup", "info");
+      return;
+    }
+    ctx.ui.notify(await runSetup(ctx), "info");
+  };
+
+  pi.registerCommand("orchestrator", {
+    description: "Orchestrator commands: setup",
+    handler: setupCommand,
+  });
+
+  pi.registerCommand("orcehstrator", {
+    description: "Typo-compatible alias for /orchestrator setup",
+    handler: setupCommand,
   });
 
   pi.registerCommand("orchestrate-status", {
@@ -166,13 +198,30 @@ async function runDoctor(ctx: CommandContext): Promise<string> {
   checks.push(await doctorCheck("wt", async () => {
     await runCommand("wt", ["switch", "--help"], { cwd: ctx.cwd });
   }));
-  checks.push(trusted ? "ok project trusted" : "warn project not trusted; .pi/orchestrator.json ignored");
-  checks.push(await doctorCheck(`config ${getConfigPath(ctx.cwd)}`, async () => {
-    await loadOrchestratorConfig({ cwd: ctx.cwd, trusted });
-  }));
+  checks.push(trusted ? "ok project trusted" : "warn project not trusted; project .pi/orchestrator.json ignored");
+  const globalPath = getGlobalConfigPath();
+  const projectPath = getConfigPath(ctx.cwd);
+  const globalExists = await pathExists(globalPath);
+  const projectExists = trusted ? await pathExists(projectPath) : false;
+
+  checks.push(globalExists
+    ? await doctorCheck(`global config ${globalPath}`, async () => {
+      await loadOptionalConfig(globalPath);
+    })
+    : `warn global config not found ${globalPath}`);
+  checks.push(!trusted
+    ? `warn project config ignored ${projectPath}`
+    : projectExists
+      ? await doctorCheck(`project config ${projectPath}`, async () => {
+        await loadOptionalConfig(projectPath);
+      })
+      : `ok no project config ${projectPath}`);
 
   const config = await loadOrchestratorConfig({ cwd: ctx.cwd, trusted }).catch(() => undefined);
   if (config) {
+    const sources = ["defaults", globalExists ? "global" : undefined, projectExists ? "project" : undefined]
+      .filter((source): source is string => Boolean(source));
+    checks.push(`ok config sources ${sources.join(" + ")}`);
     checks.push(
       config.checks.length
         ? `ok checks ${config.checks.length}`
@@ -194,6 +243,94 @@ async function doctorCheck(name: string, check: () => Promise<void>): Promise<st
     const message = error instanceof Error ? error.message.trim() : String(error);
     return `fail ${name}: ${message.split("\n")[0] ?? message}`;
   }
+}
+
+async function runSetup(ctx: CommandContext): Promise<string> {
+  const select = ctx.ui.select;
+  const input = ctx.ui.input;
+  if (!select) return "Orchestrator setup requires a UI select prompt, but this Pi build does not expose one.";
+
+  const projectPath = getConfigPath(ctx.cwd);
+  const globalPath = getGlobalConfigPath();
+  const scope = await select("Create orchestrator config", [
+    `Global (${globalPath})`,
+    `Project (${projectPath})`,
+    "Cancel",
+  ]);
+  if (!scope || scope === "Cancel") return "Orchestrator setup cancelled.";
+  if (scope.startsWith("Project") && ctx.isProjectTrusted?.() === false) {
+    return "Project is not trusted; refusing to write project .pi/orchestrator.json.";
+  }
+
+  const path = scope.startsWith("Global") ? globalPath : projectPath;
+  if (await pathExists(path)) return `Orchestrator config already exists at ${path}; no changes made.`;
+
+  const currentModel = currentModelArg(ctx);
+  const models = await listAvailableModels(ctx.cwd);
+  const modelChoices = [
+    ...(currentModel ? [`Use current model (${currentModel})`] : []),
+    ...models.filter((model) => model !== currentModel),
+    "Enter manually",
+    "Cancel",
+  ];
+  const modelChoice = await select("Orchestrator worker model", modelChoices);
+  if (!modelChoice || modelChoice === "Cancel") return "Orchestrator setup cancelled.";
+
+  let model: string | undefined;
+  if (modelChoice === "Enter manually") {
+    if (!input) return "Manual model entry requires a UI input prompt, but this Pi build does not expose one.";
+    model = (await input("Orchestrator worker model", "provider/model-id"))?.trim();
+    if (!model) return "Orchestrator setup cancelled.";
+  } else if (modelChoice.startsWith("Use current model (")) {
+    model = currentModel;
+  } else {
+    model = modelChoice;
+  }
+
+  const thinkingChoice = await select("Orchestrator worker thinking level", ["Default", "off", "minimal", "low", "medium", "high", "xhigh", "Cancel"]);
+  if (!thinkingChoice || thinkingChoice === "Cancel") return "Orchestrator setup cancelled.";
+  const thinking = thinkingChoice === "Default" ? undefined : parseSetupThinking(thinkingChoice);
+
+  const maxParallelInput = (await input?.("Max parallel workers:", "2"))?.trim();
+  const maxParallel = maxParallelInput ? Number(maxParallelInput) : 2;
+  if (!Number.isSafeInteger(maxParallel) || maxParallel < 1) throw new Error("maxParallel must be a positive integer");
+
+  const config = {
+    maxParallel,
+    checks: [],
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(config, null, 2) + "\n", "utf8");
+  return `Created orchestrator config at ${path}.`;
+}
+
+async function listAvailableModels(cwd: string): Promise<string[]> {
+  try {
+    const output = await runCommand("pi", ["--list-models"], { cwd });
+    return output.split("\n").slice(1).map((line) => {
+      const [provider, model] = line.trim().split(/\s+/);
+      return provider && model ? `${provider}/${model}` : undefined;
+    }).filter((model): model is string => Boolean(model));
+  } catch {
+    return [];
+  }
+}
+
+function currentModelArg(ctx: CommandContext): string | undefined {
+  const model = (ctx as any).model;
+  if (!model?.id) return undefined;
+  return model.provider ? `${model.provider}/${model.id}` : model.id;
+}
+
+function parseSetupThinking(value: string): OrchestratorThinkingLevel {
+  const allowed = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+  if (!allowed.includes(value as OrchestratorThinkingLevel)) {
+    throw new Error(`thinking must be one of: ${allowed.join(", ")}`);
+  }
+  return value as OrchestratorThinkingLevel;
 }
 
 async function ensureRun(cwd: string, repo: string, parentIssueNumber: number): Promise<void> {
