@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -11,6 +11,15 @@ const execFileAsync = promisify(execFile);
 const RUN_DIR = join(getAgentDir(), "overseer");
 const CUSTOM_REVIEW_COMPLETE = "overseer-review-complete";
 const REVIEW_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+type OverseerThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+type OverseerConfig = {
+	model?: string;
+	thinking?: OverseerThinkingLevel;
+};
+
+const defaultOverseerConfig: OverseerConfig = {};
 
 const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only code review agent running beside a coding agent in a herdr pane.
 
@@ -40,6 +49,7 @@ const HELP = `Overseer commands:
 - /overseer review --headed   Spawn a right-side herdr pane running a fresh pi review session. Requires HERDR_ENV=1.
 - /overseer pane              Show the last recorded overseer pane id.
 - /overseer read [n]          Read recent output from the overseer pane.
+- /overseer doctor            Check overseer setup and config.
 - /overseer help              Show this help.
 
 By default, overseer runs headlessly as a sub-agent and returns a structured artifact for the main agent to inspect and act on. Use --headed when you explicitly want a visible herdr pane.`;
@@ -67,10 +77,71 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function modelArg(ctx: ExtensionContext): string | undefined {
+function getConfigPath(cwd: string): string {
+	return join(cwd, ".pi", "overseer.json");
+}
+
+function isProjectTrusted(ctx: ExtensionContext): boolean {
+	return (ctx as any).isProjectTrusted?.() ?? true;
+}
+
+async function loadOverseerConfig(ctx: ExtensionContext): Promise<OverseerConfig> {
+	if (!isProjectTrusted(ctx)) return defaultOverseerConfig;
+
+	let raw: string;
+	try {
+		raw = await readFile(getConfigPath(ctx.cwd), "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultOverseerConfig;
+		throw error;
+	}
+
+	return parseOverseerConfig(JSON.parse(raw));
+}
+
+function parseOverseerConfig(value: unknown): OverseerConfig {
+	if (!isRecord(value)) throw new Error("overseer config must be an object");
+	return {
+		model: parseOptionalString(value.model, "model"),
+		thinking: parseOptionalThinkingLevel(value.thinking),
+	};
+}
+
+function parseOptionalString(value: unknown, key: string): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || !value.trim()) throw new Error(`overseer config ${key} must be a non-empty string`);
+	return value;
+}
+
+function parseOptionalThinkingLevel(value: unknown): OverseerThinkingLevel | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || !THINKING_LEVELS.includes(value as OverseerThinkingLevel)) {
+		throw new Error(`overseer config thinking must be one of: ${THINKING_LEVELS.join(", ")}`);
+	}
+	return value as OverseerThinkingLevel;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function modelArg(ctx: ExtensionContext, config: OverseerConfig): string | undefined {
+	if (config.model) return config.model;
 	const model = (ctx as any).model;
 	if (!model?.id) return undefined;
 	return model.provider ? `${model.provider}/${model.id}` : model.id;
+}
+
+function piConfigArgs(ctx: ExtensionContext, config: OverseerConfig): string[] {
+	const args: string[] = [];
+	const selectedModel = modelArg(ctx, config);
+	if (selectedModel) args.push("--model", selectedModel);
+	if (config.thinking) args.push("--thinking", config.thinking);
+	return args;
+}
+
+function piConfigFlags(ctx: ExtensionContext, config: OverseerConfig): string {
+	return piConfigArgs(ctx, config).map(shellQuote).join(" ");
 }
 
 async function currentPaneId(cwd: string): Promise<string | undefined> {
@@ -151,9 +222,9 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string) {
 	await mkdir(RUN_DIR, { recursive: true });
 	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
 	await writeFile(promptPath, await reviewPromptBody(ctx), "utf8");
-	const selectedModel = modelArg(ctx);
+	const config = await loadOverseerConfig(ctx);
 	const args = ["-p", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files"];
-	if (selectedModel) args.push("--model", selectedModel);
+	args.push(...piConfigArgs(ctx, config));
 	args.push("--name", "overseer review", "--system-prompt", REVIEW_SYSTEM_PROMPT, `@${promptPath}`);
 	const output = await execText("pi", args, ctx.cwd, REVIEW_WAIT_TIMEOUT_MS);
 	const findings = extractReviewFindings(output);
@@ -176,12 +247,12 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string) {
 async function spawnReviewPane(ctx: ExtensionContext): Promise<OverseerState> {
 	const promptPath = await writeReviewPrompt(ctx);
 	const paneId = await splitRight(ctx.cwd);
-	const selectedModel = modelArg(ctx);
-	const modelFlag = selectedModel ? ` --model ${shellQuote(selectedModel)}` : "";
+	const config = await loadOverseerConfig(ctx);
+	const configFlags = piConfigFlags(ctx, config);
 	const command = [
 		"cd " + shellQuote(ctx.cwd),
 		"printf '%s\\n' '[overseer] starting pi review session...'",
-		`pi --no-skills --no-prompt-templates --no-themes --no-context-files${modelFlag} --name ${shellQuote("overseer review")} --system-prompt ${shellQuote(REVIEW_SYSTEM_PROMPT)} @${shellQuote(promptPath)}`,
+		`pi --no-skills --no-prompt-templates --no-themes --no-context-files${configFlags ? ` ${configFlags}` : ""} --name ${shellQuote("overseer review")} --system-prompt ${shellQuote(REVIEW_SYSTEM_PROMPT)} @${shellQuote(promptPath)}`,
 	].join(" && ");
 	await execFileAsync("herdr", ["pane", "run", paneId, command], { cwd: ctx.cwd, timeout: 10_000 });
 	state.paneId = paneId;
@@ -249,6 +320,39 @@ function reviewCompleteMessage(paneId: string, promptPath: string | undefined, o
 
 function setOverseerStatus(ctx: ExtensionContext, text: string): void {
 	ctx.ui.setStatus("overseer", ctx.ui.theme.fg("dim", text));
+}
+
+async function doctorCheck(name: string, check: () => Promise<void>): Promise<string> {
+	try {
+		await check();
+		return `ok ${name}`;
+	} catch (error) {
+		const message = error instanceof Error ? error.message.trim() : String(error);
+		return `fail ${name}: ${message.split("\n")[0] ?? message}`;
+	}
+}
+
+async function runDoctor(ctx: ExtensionContext): Promise<string> {
+	const trusted = isProjectTrusted(ctx);
+	const checks: string[] = [];
+	checks.push(await doctorCheck("git repo", async () => {
+		await execText("git", ["rev-parse", "--show-toplevel"], ctx.cwd, 10_000);
+	}));
+	checks.push(await doctorCheck("pi", async () => {
+		await execText("pi", ["--help"], ctx.cwd, 10_000);
+	}));
+	checks.push(trusted ? "ok project trusted" : "warn project not trusted; .pi/overseer.json ignored");
+	checks.push(await doctorCheck(`config ${getConfigPath(ctx.cwd)}`, async () => {
+		await loadOverseerConfig(ctx);
+	}));
+
+	const config = await loadOverseerConfig(ctx).catch(() => undefined);
+	if (config) {
+		checks.push(config.model ? `ok model ${config.model}` : `ok model ${modelArg(ctx, config) ?? "default"}`);
+		checks.push(config.thinking ? `ok thinking ${config.thinking}` : "ok thinking default");
+	}
+
+	return ["overseer doctor", ...checks].join("\n");
 }
 
 function monitorReviewer(pi: ExtensionAPI, ctx: ExtensionContext, paneId: string, promptPath: string | undefined, token: number): void {
@@ -322,7 +426,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Overseer adversarial review: review [--headed], pane, read, help",
+		description: "Overseer adversarial review: review [--headed], pane, read, doctor, help",
 		handler: async (args: string, ctx: ExtensionContext) => {
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const command = tokens[0]?.startsWith("--") ? "review" : tokens[0] || "review";
@@ -337,6 +441,11 @@ export default function (pi: ExtensionAPI) {
 
 			if (command === "pane" || command === "status") {
 				ctx.ui.notify(state.paneId ? `Overseer pane: ${state.paneId}\nPrompt: ${state.promptPath}` : "No overseer pane has been spawned yet.", "info");
+				return;
+			}
+
+			if (command === "doctor") {
+				ctx.ui.notify(await runDoctor(ctx), "info");
 				return;
 			}
 
