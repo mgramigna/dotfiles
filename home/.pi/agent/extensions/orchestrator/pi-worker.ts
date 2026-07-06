@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync } from "node:fs";
 
+import type { OrchestratorConfig } from "./config";
 import type { WorkerState } from "./state";
 import type { WorkerFiles } from "./storage";
 
@@ -18,6 +19,7 @@ export function spawnPiWorker(input: {
   files: WorkerFiles;
   runId: string;
   mode?: PiWorkerSpawnMode;
+  config: OrchestratorConfig;
 }): SpawnedPiWorker {
   if (input.mode === "headed") return spawnHeadedPiWorker(input);
 
@@ -25,7 +27,7 @@ export function spawnPiWorker(input: {
   const stderr = openSync(input.files.stderrPath, "a");
   const child = spawn(
     "pi",
-    ["--approve", "--name", input.worker.id, "-p", `@${input.worker.promptPath}`],
+    ["--approve", ...piModelArgs(input.config), "--name", input.worker.id, "-p", `@${input.worker.promptPath}`],
     {
       cwd: input.worker.worktreePath,
       detached: true,
@@ -48,6 +50,7 @@ function spawnHeadedPiWorker(input: {
   worker: WorkerState;
   files: WorkerFiles;
   runId: string;
+  config: OrchestratorConfig;
 }): SpawnedPiWorker {
   assertHerdrEnv();
 
@@ -67,6 +70,7 @@ function spawnHeadedPiWorker(input: {
       "--",
       "pi",
       "--approve",
+      ...piModelArgs(input.config),
       "--name",
       input.worker.id,
       `@${input.worker.promptPath}`,
@@ -79,6 +83,13 @@ function spawnHeadedPiWorker(input: {
     stderrPath: `herdr:${input.worker.id}`,
     sessionFile: `herdr:${input.worker.id}`,
   };
+}
+
+function piModelArgs(config: OrchestratorConfig): string[] {
+  const args: string[] = [];
+  if (config.model) args.push("--model", config.model);
+  if (config.thinking) args.push("--thinking", config.thinking);
+  return args;
 }
 
 function assertHerdrEnv(): void {

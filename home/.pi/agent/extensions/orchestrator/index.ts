@@ -179,6 +179,8 @@ async function runDoctor(ctx: CommandContext): Promise<string> {
         : "warn no checks configured",
     );
     checks.push(`ok maxParallel ${config.maxParallel}`);
+    checks.push(config.model ? `ok model ${config.model}` : "ok model default");
+    checks.push(config.thinking ? `ok thinking ${config.thinking}` : "ok thinking default");
   }
 
   return ["orchestrator doctor", ...checks].join("\n");
@@ -284,7 +286,7 @@ async function tickRun(
 
   if (starting?.worker) {
     const files = getWorkerFiles(cwd, runId, starting.issueNumber);
-    const spawned = spawnPiWorker({ worker: starting.worker, files, runId, mode: spawnMode });
+    const spawned = spawnPiWorker({ worker: starting.worker, files, runId, mode: spawnMode, config });
     const nextState = markWorkerRunning({
       state: collected.state,
       issueNumber: starting.issueNumber,
