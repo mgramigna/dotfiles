@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -98,6 +98,16 @@ async function loadOverseerConfig(ctx: ExtensionContext): Promise<OverseerConfig
 	const globalConfig = await loadOptionalConfig(getGlobalConfigPath());
 	const projectConfig = isProjectTrusted(ctx) ? await loadOptionalConfig(getConfigPath(ctx.cwd)) : undefined;
 	return { ...defaultOverseerConfig, ...globalConfig, ...projectConfig };
+}
+
+async function configExists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
 }
 
 async function loadOptionalConfig(path: string): Promise<OverseerConfig | undefined> {
@@ -387,14 +397,28 @@ async function runDoctor(ctx: ExtensionContext): Promise<string> {
 	return ["overseer doctor", ...checks].join("\n");
 }
 
-async function configExists(path: string): Promise<boolean> {
+async function readConfigObjectIfExists(path: string): Promise<Record<string, unknown> | undefined> {
+	let raw: string;
 	try {
-		await readFile(path, "utf8");
-		return true;
+		raw = await readFile(path, "utf8");
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
 		throw error;
 	}
+	const parsed = JSON.parse(raw);
+	if (!isRecord(parsed)) throw new Error(`overseer config at ${path} must be an object`);
+	parseOverseerConfig(parsed);
+	return parsed;
+}
+
+function formatJsonDiff(before: string, after: string): string {
+	const beforeLines = before.split("\n");
+	const afterLines = after.split("\n");
+	return [
+		"Config diff:",
+		...beforeLines.filter((line) => line.length > 0).map((line) => `- ${line}`),
+		...afterLines.filter((line) => line.length > 0).map((line) => `+ ${line}`),
+	].join("\n");
 }
 
 async function listAvailableModels(cwd: string): Promise<string[]> {
@@ -408,7 +432,9 @@ async function listAvailableModels(cwd: string): Promise<string[]> {
 async function runSetup(ctx: ExtensionContext): Promise<string> {
 	const select = (ctx.ui as any).select as ((title: string, choices: string[]) => Promise<string | undefined>) | undefined;
 	const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
+	const confirm = (ctx.ui as any).confirm as ((title: string, message: string) => Promise<boolean>) | undefined;
 	if (!select) return "Overseer setup requires a UI select prompt, but this Pi build does not expose one.";
+	if (!confirm) return "Overseer setup requires a UI confirm prompt, but this Pi build does not expose one.";
 
 	const projectPath = getConfigPath(ctx.cwd);
 	const globalPath = getGlobalConfigPath();
@@ -422,7 +448,7 @@ async function runSetup(ctx: ExtensionContext): Promise<string> {
 	if (scope.startsWith("Project") && !isProjectTrusted(ctx)) return "Project is not trusted; refusing to write project .pi/overseer.json.";
 
 	const path = scope.startsWith("Global") ? globalPath : projectPath;
-	if (await configExists(path)) return `Overseer config already exists at ${path}; no changes made.`;
+	const existingConfig = await readConfigObjectIfExists(path);
 
 	const currentModel = modelArg(ctx, defaultOverseerConfig);
 	const models = await listAvailableModels(ctx.cwd);
@@ -453,10 +479,19 @@ async function runSetup(ctx: ExtensionContext): Promise<string> {
 		...(model ? { model } : {}),
 		...(thinking ? { thinking } : {}),
 	};
+	const nextConfig = { ...(existingConfig ?? {}), ...config };
+	const before = existingConfig ? JSON.stringify(existingConfig, null, 2) + "\n" : "";
+	const after = JSON.stringify(nextConfig, null, 2) + "\n";
+	if (before === after) return `Overseer config at ${path} already matches setup selections; no changes made.`;
+	const ok = await confirm(
+		existingConfig ? "Update overseer config?" : "Create overseer config?",
+		`Path: ${path}\n\n${formatJsonDiff(before, after)}`,
+	);
+	if (!ok) return "Overseer setup cancelled; no changes made.";
 
 	await mkdir(getConfigDir(path), { recursive: true });
-	await writeFile(path, JSON.stringify(config, null, 2) + "\n", "utf8");
-	return `Created overseer config at ${path}.`;
+	await writeFile(path, after, "utf8");
+	return `${existingConfig ? "Updated" : "Created"} overseer config at ${path}.`;
 }
 
 function monitorReviewer(pi: ExtensionAPI, ctx: ExtensionContext, paneId: string, promptPath: string | undefined, token: number): void {

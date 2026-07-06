@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -42,6 +42,7 @@ type CommandContext = {
     notify: (message: string, level: "info" | "error" | "warning" | "success") => void;
     input?: (prompt: string, placeholder?: string) => Promise<string | undefined>;
     select?: (title: string, choices: string[]) => Promise<string | undefined>;
+    confirm?: (title: string, message: string) => Promise<boolean>;
     setStatus?: (key: string, value: string | undefined) => void;
     theme?: { fg: (color: "dim", text: string) => string };
     setWidget?: (
@@ -248,7 +249,9 @@ async function doctorCheck(name: string, check: () => Promise<void>): Promise<st
 async function runSetup(ctx: CommandContext): Promise<string> {
   const select = ctx.ui.select;
   const input = ctx.ui.input;
+  const confirm = ctx.ui.confirm;
   if (!select) return "Orchestrator setup requires a UI select prompt, but this Pi build does not expose one.";
+  if (!confirm) return "Orchestrator setup requires a UI confirm prompt, but this Pi build does not expose one.";
 
   const projectPath = getConfigPath(ctx.cwd);
   const globalPath = getGlobalConfigPath();
@@ -263,7 +266,7 @@ async function runSetup(ctx: CommandContext): Promise<string> {
   }
 
   const path = scope.startsWith("Global") ? globalPath : projectPath;
-  if (await pathExists(path)) return `Orchestrator config already exists at ${path}; no changes made.`;
+  const existingConfig = await readConfigObjectIfExists(path);
 
   const currentModel = currentModelArg(ctx);
   const models = await listAvailableModels(ctx.cwd);
@@ -297,14 +300,51 @@ async function runSetup(ctx: CommandContext): Promise<string> {
 
   const config = {
     maxParallel,
-    checks: [],
+    ...(existingConfig ? {} : { checks: [] }),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
   };
+  const nextConfig = { ...(existingConfig ?? {}), ...config };
+  const before = existingConfig ? JSON.stringify(existingConfig, null, 2) + "\n" : "";
+  const after = JSON.stringify(nextConfig, null, 2) + "\n";
+  if (before === after) return `Orchestrator config at ${path} already matches setup selections; no changes made.`;
+  const ok = await confirm(
+    existingConfig ? "Update orchestrator config?" : "Create orchestrator config?",
+    `Path: ${path}\n\n${formatJsonDiff(before, after)}`,
+  );
+  if (!ok) return "Orchestrator setup cancelled; no changes made.";
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(config, null, 2) + "\n", "utf8");
-  return `Created orchestrator config at ${path}.`;
+  await writeFile(path, after, "utf8");
+  return `${existingConfig ? "Updated" : "Created"} orchestrator config at ${path}.`;
+}
+
+async function readConfigObjectIfExists(path: string): Promise<Record<string, unknown> | undefined> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  const parsed = JSON.parse(raw);
+  if (!isRecord(parsed)) throw new Error(`orchestrator config at ${path} must be an object`);
+  await loadOptionalConfig(path);
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatJsonDiff(before: string, after: string): string {
+  const beforeLines = before.split("\n");
+  const afterLines = after.split("\n");
+  return [
+    "Config diff:",
+    ...beforeLines.filter((line) => line.length > 0).map((line) => `- ${line}`),
+    ...afterLines.filter((line) => line.length > 0).map((line) => `+ ${line}`),
+  ].join("\n");
 }
 
 async function listAvailableModels(cwd: string): Promise<string[]> {

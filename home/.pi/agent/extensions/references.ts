@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const execFileAsync = promisify(execFile);
@@ -23,6 +23,10 @@ interface ReferencesConfig {
 
 const configPath = path.join(homedir(), ".pi", "agent", "references.json");
 const defaultReposDir = path.join(homedir(), ".local", "share", "pi", "references");
+
+function textToolResult(text: string): AgentToolResult<unknown> {
+	return { content: [{ type: "text", text }], details: undefined };
+}
 
 const REFERENCES_HELP = `References commands:
 - /references list
@@ -296,16 +300,17 @@ export default function (pi: ExtensionAPI) {
 			const config = await loadConfig();
 			const references = config.references ?? [];
 			if (params.action === "list") {
-				return { content: [{ type: "text", text: formatReferenceList(references) }] };
+				return textToolResult(formatReferenceList(references));
 			}
 			if (params.action === "ensure") {
-				if (!params.name) return { content: [{ type: "text", text: "Missing npm package name or git URL." }] };
-				return { content: [{ type: "text", text: await ensureReference(params.name, params.description) }] };
+				if (!params.name) return textToolResult("Missing npm package name or git URL.");
+				return textToolResult(await ensureReference(params.name, params.description));
 			}
-			const refs = params.name ? references.filter((ref) => ref.name === stripMentionPrefix(params.name)) : references;
+			const name = params.name;
+			const refs = name ? references.filter((ref) => ref.name === stripMentionPrefix(name)) : references;
 			const results = [];
 			for (const ref of refs) results.push(await syncReference(ref));
-			return { content: [{ type: "text", text: results.join("\n") || "No matching references." }] };
+			return textToolResult(results.join("\n") || "No matching references.");
 		},
 	});
 }

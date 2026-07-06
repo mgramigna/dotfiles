@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tsc": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "rc"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "latest",
+    "@earendil-works/pi-coding-agent": "latest",
+    "@earendil-works/pi-tui": "latest",
+    "typebox": "latest"
+  }
+}

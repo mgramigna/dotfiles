@@ -9,6 +9,8 @@ home/.pi/agent/auth.json
 home/.pi/agent/sessions/
 home/.pi/agent/bin/
 home/.pi/agent/npm/node_modules/
+home/.pi/agent/node_modules/
+home/.pi/agent/package-lock.json
 home/.pi/agent/references.json
 home/.pi/agent/trust.json
 home/.pi/agent/logs/overseer-*.log

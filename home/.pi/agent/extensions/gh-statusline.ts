@@ -138,7 +138,7 @@ async function openCurrentPr(ctx: ExtensionContext): Promise<void> {
 		return;
 	}
 
-	ctx.ui.notify(`Opened PR #${pr.number}`, "success");
+	ctx.ui.notify(`Opened PR #${pr.number}`, "success" as any);
 }
 
 async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
@@ -168,7 +168,7 @@ async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
 	const failedRuns = (runs ?? []).filter(isFailedRun);
 
 	if (failedRuns.length === 0) {
-		ctx.ui.notify("No failed GitHub Actions runs found for this PR", "success");
+		ctx.ui.notify("No failed GitHub Actions runs found for this PR", "success" as any);
 		return;
 	}
 
@@ -205,7 +205,7 @@ async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
 
 	ctx.ui.notify(
 		`Triggered rerun of failed jobs in ${rerunCount} GitHub Actions run${rerunCount === 1 ? "" : "s"}`,
-		"success",
+		"success" as any,
 	);
 }
 

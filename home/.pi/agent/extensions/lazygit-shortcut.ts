@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { KeyId } from "@earendil-works/pi-tui";
 
 const SHORTCUT = process.env.PI_LAZYGIT_SHORTCUT || "f2";
 const FALLBACK_SHORTCUT = process.env.PI_LAZYGIT_FALLBACK_SHORTCUT || "ctrl+shift+g";
@@ -26,11 +27,11 @@ async function openLazygit(ctx: ExtensionContext) {
 		if (result.error) {
 			ctx.ui.notify(`Failed to open lazygit: ${result.error.message}`, "error");
 		} else if (result.status && result.status !== 0) {
-			ctx.ui.notify(`lazygit exited with code ${result.status}`, "warn");
+			ctx.ui.notify(`lazygit exited with code ${result.status}`, "warning");
 		}
 
 		done(result.status);
-		return { render: () => [], invalidate: () => {} };
+		return { render: () => [], invalidate: () => { } };
 	});
 }
 
@@ -42,12 +43,12 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerShortcut(SHORTCUT, {
+	pi.registerShortcut(SHORTCUT as KeyId, {
 		description: "Open lazygit",
 		handler: openLazygit,
 	});
 
-	pi.registerShortcut(FALLBACK_SHORTCUT, {
+	pi.registerShortcut(FALLBACK_SHORTCUT as KeyId, {
 		description: "Open lazygit",
 		handler: openLazygit,
 	});
