@@ -36,12 +36,13 @@ Required format for each issue:
 If there are no defensible issues, say exactly: "I found no defensible issues."`;
 
 const HELP = `Overseer commands:
-- /overseer review      Spawn a right-side herdr pane running a fresh pi review session.
-- /overseer pane        Show the last recorded overseer pane id.
-- /overseer read [n]    Read recent output from the overseer pane.
-- /overseer help        Show this help.
+- /overseer review            Run a headless sub-agent review of the current uncommitted diff.
+- /overseer review --headed   Spawn a right-side herdr pane running a fresh pi review session. Requires HERDR_ENV=1.
+- /overseer pane              Show the last recorded overseer pane id.
+- /overseer read [n]          Read recent output from the overseer pane.
+- /overseer help              Show this help.
 
-This version is manual-only and never blocks the main agent loop. The review runs as an independent pi TUI in herdr. When the reviewer finishes, the main agent is notified and should inspect the pane output before deciding what to do next.`;
+By default, overseer runs headlessly as a sub-agent and returns a structured artifact for the main agent to inspect and act on. Use --headed when you explicitly want a visible herdr pane.`;
 
 interface OverseerState {
 	paneId?: string;
@@ -296,9 +297,10 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId: string, params: { artifactPath?: string }, _signal: any, _onUpdate: unknown, ctx: ExtensionContext) {
 			const { path, artifact } = await runHeadlessReview(ctx, params.artifactPath);
+			const summary = artifact.findings || "I found no defensible issues.";
 			return {
-				content: [{ type: "text", text: `Overseer review ${artifact.status}. Artifact: ${path}` }],
-				details: { path, status: artifact.status, counts: artifact.counts },
+				content: [{ type: "text", text: `Overseer review ${artifact.status}. Artifact: ${path}\n\n${summary}` }],
+				details: { path, status: artifact.status, counts: artifact.counts, findings: artifact.findings },
 			};
 		},
 	});
@@ -320,10 +322,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Manual herdr-pane overseer review: review, pane, read, help",
+		description: "Overseer adversarial review: review [--headed], pane, read, help",
 		handler: async (args: string, ctx: ExtensionContext) => {
-			const [subcommand, maybeLines] = args.trim().split(/\s+/, 2);
-			const command = subcommand || "review";
+			const tokens = args.trim().split(/\s+/).filter(Boolean);
+			const command = tokens[0]?.startsWith("--") ? "review" : tokens[0] || "review";
+			const commandArgs = tokens[0]?.startsWith("--") ? tokens : tokens.slice(1);
+			const flags = new Set(commandArgs.filter((token) => token.startsWith("--")));
+			const maybeLines = commandArgs.find((token) => !token.startsWith("--"));
 
 			if (command === "help" || command === "--help" || command === "-h") {
 				ctx.ui.notify(HELP, "info");
@@ -350,15 +355,30 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			try {
+			if (flags.has("--headed")) {
 				setOverseerStatus(ctx, "overseer: spawning");
-				const spawned = await spawnReviewPane(ctx);
+				try {
+					const spawned = await spawnReviewPane(ctx);
+					setOverseerStatus(ctx, "overseer: reviewing");
+					if (spawned.paneId && spawned.monitorToken) monitorReviewer(pi, ctx, spawned.paneId, spawned.promptPath, spawned.monitorToken);
+					ctx.ui.notify(`Overseer review spawned in herdr pane ${spawned.paneId}.\nPrompt: ${spawned.promptPath}\nThe main agent will be notified when the reviewer finishes. Use /overseer read or the overseer_read_pane tool to inspect output sooner.`, "info");
+				} catch (error) {
+					setOverseerStatus(ctx, "overseer: error");
+					ctx.ui.notify(`Could not spawn overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
+					throw error;
+				}
+				return;
+			}
+
+			try {
 				setOverseerStatus(ctx, "overseer: reviewing");
-				if (spawned.paneId && spawned.monitorToken) monitorReviewer(pi, ctx, spawned.paneId, spawned.promptPath, spawned.monitorToken);
-				ctx.ui.notify(`Overseer review spawned in herdr pane ${spawned.paneId}.\nPrompt: ${spawned.promptPath}\nThe main agent will be notified when the reviewer finishes. Use /overseer read or the overseer_read_pane tool to inspect output sooner.`, "info");
+				const { path, artifact } = await runHeadlessReview(ctx);
+				setOverseerStatus(ctx, artifact.status === "passed" ? "overseer: passed" : "overseer: needs resolution");
+				const summary = artifact.findings || "I found no defensible issues.";
+				ctx.ui.notify(`Overseer review ${artifact.status}.\nArtifact: ${path}\n\n${summary}`, artifact.status === "passed" ? "info" : "warning");
 			} catch (error) {
 				setOverseerStatus(ctx, "overseer: error");
-				ctx.ui.notify(`Could not spawn overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
+				ctx.ui.notify(`Could not run overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
 		},
 	});
