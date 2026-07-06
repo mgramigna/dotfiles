@@ -11,9 +11,12 @@ export type OrchestratorCheck = {
 
 export type OrchestratorThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
+export type OrchestratorPublishMode = "single-pr" | "stacked-prs" | "none";
+
 export type OrchestratorConfig = {
   maxParallel: number;
   checks: OrchestratorCheck[];
+  publishMode: OrchestratorPublishMode;
   model?: string;
   thinking?: OrchestratorThinkingLevel;
 };
@@ -21,6 +24,7 @@ export type OrchestratorConfig = {
 export const defaultOrchestratorConfig: OrchestratorConfig = {
   maxParallel: 2,
   checks: [],
+  publishMode: "single-pr",
 };
 
 export function getConfigPath(cwd: string): string {
@@ -94,9 +98,11 @@ function parsePartialOrchestratorConfig(value: unknown): PartialOrchestratorConf
 
   const model = parseOptionalString(value.model, "model");
   const thinking = parseOptionalThinkingLevel(value.thinking);
+  const publishMode = parseOptionalPublishMode(value.publishMode);
   return {
     ...(maxParallel !== undefined ? { maxParallel } : {}),
     ...(checks !== undefined ? { checks } : {}),
+    ...(publishMode !== undefined ? { publishMode } : {}),
     ...(model !== undefined ? { model } : {}),
     ...(thinking !== undefined ? { thinking } : {}),
   };
@@ -117,6 +123,15 @@ function parseOptionalThinkingLevel(value: unknown): OrchestratorThinkingLevel |
     throw new Error(`orchestrator config thinking must be one of: ${allowed.join(", ")}`);
   }
   return value as OrchestratorThinkingLevel;
+}
+
+function parseOptionalPublishMode(value: unknown): OrchestratorPublishMode | undefined {
+  if (value === undefined) return undefined;
+  const allowed = ["single-pr", "stacked-prs", "none"] as const;
+  if (typeof value !== "string" || !allowed.includes(value as OrchestratorPublishMode)) {
+    throw new Error(`orchestrator config publishMode must be one of: ${allowed.join(", ")}`);
+  }
+  return value as OrchestratorPublishMode;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

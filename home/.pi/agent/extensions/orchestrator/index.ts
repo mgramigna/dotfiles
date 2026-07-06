@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 
 import {
   type OrchestratorConfig,
+  type OrchestratorPublishMode,
   type OrchestratorThinkingLevel,
   getConfigPath,
   getGlobalConfigPath,
@@ -69,7 +70,7 @@ export default function (pi: {
       const parentIssueNumber = parseIssueNumber(parsed.issue);
 
       if (!parentIssueNumber) {
-        ctx.ui.notify("Usage: /orchestrate <issue-url|issue-number> [--headed]", "info");
+        ctx.ui.notify("Usage: /orchestrate <issue-url|issue-number> [--headed] [--stack|--no-pr]", "info");
         return;
       }
 
@@ -86,6 +87,7 @@ export default function (pi: {
           onProgress: progress.update,
           resetMainWorktree: false,
           freshRun: false,
+          publishMode: parsed.publishMode,
         });
         ctx.ui.notify(result, "info");
       } finally {
@@ -153,6 +155,7 @@ export async function runOrchestratorHeadless(input: {
   onProgress?: (progress: Progress) => void;
   resetMainWorktree?: boolean;
   freshRun?: boolean;
+  publishMode?: OrchestratorPublishMode;
 }): Promise<string> {
   if (input.resetMainWorktree ?? true) await resetMainWorktreeToDefaultBranch(input.cwd);
   if (input.freshRun ?? true) {
@@ -172,7 +175,7 @@ export async function runOrchestratorHeadless(input: {
     input.parentIssueNumber,
     input.onProgress ?? (() => undefined),
     input.mode ?? "background",
-    config,
+    input.publishMode ? { ...config, publishMode: input.publishMode } : config,
   );
 }
 
@@ -229,6 +232,7 @@ async function runDoctor(ctx: CommandContext): Promise<string> {
         : "warn no checks configured",
     );
     checks.push(`ok maxParallel ${config.maxParallel}`);
+    checks.push(`ok publishMode ${config.publishMode}`);
     checks.push(config.model ? `ok model ${config.model}` : "ok model default");
     checks.push(config.thinking ? `ok thinking ${config.thinking}` : "ok thinking default");
   }
@@ -298,8 +302,18 @@ async function runSetup(ctx: CommandContext): Promise<string> {
   const maxParallel = maxParallelInput ? Number(maxParallelInput) : 2;
   if (!Number.isSafeInteger(maxParallel) || maxParallel < 1) throw new Error("maxParallel must be a positive integer");
 
+  const publishModeChoice = await select("Orchestrator publish mode", [
+    "Single PR",
+    "Stacked PRs",
+    "No PR",
+    "Cancel",
+  ]);
+  if (!publishModeChoice || publishModeChoice === "Cancel") return "Orchestrator setup cancelled.";
+  const publishMode = parseSetupPublishMode(publishModeChoice);
+
   const config = {
     maxParallel,
+    publishMode,
     ...(existingConfig ? {} : { checks: [] }),
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
@@ -373,6 +387,19 @@ function parseSetupThinking(value: string): OrchestratorThinkingLevel {
   return value as OrchestratorThinkingLevel;
 }
 
+function parseSetupPublishMode(value: string): OrchestratorPublishMode {
+  switch (value) {
+    case "Single PR":
+      return "single-pr";
+    case "Stacked PRs":
+      return "stacked-prs";
+    case "No PR":
+      return "none";
+    default:
+      throw new Error("publish mode must be Single PR, Stacked PRs, or No PR");
+  }
+}
+
 async function ensureRun(cwd: string, repo: string, parentIssueNumber: number): Promise<void> {
   const runId = `prd-${parentIssueNumber}`;
 
@@ -416,7 +443,7 @@ async function runLoop(
     const status = getRunStatus(state);
     if (status === "failed")
       return [`run: ${runId}`, "decision: paused; minion failed/blocked"].join("\n");
-    if (status === "complete") return integrateRun(cwd, parentIssueNumber);
+    if (status === "complete") return integrateRun(cwd, parentIssueNumber, config);
 
     const tickResult = await tickRun(cwd, repo, parentIssueNumber, spawnMode, config);
     const nextState = await loadRunState(cwd, runId);
@@ -431,7 +458,7 @@ async function runLoop(
     const nextStatus = getRunStatus(nextState);
     if (nextStatus === "failed")
       return [`run: ${runId}`, "decision: paused; minion failed/blocked", tickResult].join("\n");
-    if (nextStatus === "complete") return integrateRun(cwd, parentIssueNumber);
+    if (nextStatus === "complete") return integrateRun(cwd, parentIssueNumber, config);
 
     await sleep(pollMs);
   }
@@ -645,7 +672,11 @@ async function prepareNextWorker(
   ].join("\n");
 }
 
-async function integrateRun(cwd: string, parentIssueNumber: number): Promise<string> {
+async function integrateRun(
+  cwd: string,
+  parentIssueNumber: number,
+  config: OrchestratorConfig,
+): Promise<string> {
   const runId = `prd-${parentIssueNumber}`;
   const state = await loadRunState(cwd, runId);
   const ordered = topologicalSlices(state);
@@ -669,11 +700,45 @@ async function integrateRun(cwd: string, parentIssueNumber: number): Promise<str
     { cwd },
   );
 
+  const stackBranches: { issueNumber: number; branch: string; base: string; title: string }[] = [];
+  let previousBase = trunkBranch;
   for (const slice of ordered) {
     const commits = slice.worker?.result?.status === "completed" ? slice.worker.result.commits : [];
     if (commits.length !== 1)
       throw new Error(`Slice #${slice.issueNumber} must have exactly one commit`);
     await runCommand("git", ["cherry-pick", commits[0] ?? ""], { cwd });
+
+    if (config.publishMode === "stacked-prs") {
+      const branch = `orchestrator/${runId}/issue-${slice.issueNumber}`;
+      await runCommand("git", ["branch", "--force", branch, "HEAD"], { cwd });
+      stackBranches.push({ issueNumber: slice.issueNumber, branch, base: previousBase, title: slice.title });
+      previousBase = branch;
+    }
+  }
+
+  if (config.publishMode === "none") {
+    await appendRunEvent(cwd, runId, {
+      type: "integrated",
+      at: new Date().toISOString(),
+      branch: integrationBranch,
+    });
+    return [`run: ${runId}`, "decision: integrated", `branch: ${integrationBranch}`].join("\n");
+  }
+
+  if (config.publishMode === "stacked-prs") {
+    const prs = await ensureStackedPullRequests({ cwd, parentIssueNumber, state, branches: stackBranches });
+    await appendRunEvent(cwd, runId, {
+      type: "integrated",
+      at: new Date().toISOString(),
+      branch: integrationBranch,
+      pullRequest: prs.map((pr) => pr.url).join(", "),
+    });
+    return [
+      `run: ${runId}`,
+      "decision: integrated as stacked PRs",
+      `integration branch: ${integrationBranch}`,
+      ...prs.map((pr) => `#${pr.issueNumber}: ${pr.url}`),
+    ].join("\n");
   }
 
   await runCommand("git", ["push", "--force-with-lease", "-u", "origin", integrationBranch], {
@@ -699,6 +764,66 @@ async function integrateRun(cwd: string, parentIssueNumber: number): Promise<str
     `branch: ${integrationBranch}`,
     `pr: ${pr.url}`,
   ].join("\n");
+}
+
+async function ensureStackedPullRequests(input: {
+  cwd: string;
+  parentIssueNumber: number;
+  state: OrchestratorRunState;
+  branches: { issueNumber: number; branch: string; base: string; title: string }[];
+}): Promise<{ issueNumber: number; number: number; url: string }[]> {
+  for (const branch of input.branches) {
+    await runCommand("git", ["push", "--force-with-lease", "-u", "origin", branch.branch], {
+      cwd: input.cwd,
+    });
+  }
+
+  const prs: { issueNumber: number; number: number; url: string }[] = [];
+  for (const branch of input.branches) {
+    const existing = await findPullRequest(input.cwd, branch.branch);
+    if (existing) {
+      prs.push({ issueNumber: branch.issueNumber, ...existing });
+      continue;
+    }
+
+    const body = [
+      `Parent PRD: #${input.parentIssueNumber}`,
+      "",
+      `Closes #${branch.issueNumber}`,
+      "",
+      "Generated by /orchestrate in stacked PR mode.",
+    ].join("\n");
+    const url = (
+      await runCommand(
+        "gh",
+        [
+          "pr",
+          "create",
+          "--base",
+          branch.base,
+          "--head",
+          branch.branch,
+          "--title",
+          toConventionalPrTitle(branch.title),
+          "--body",
+          body,
+        ],
+        { cwd: input.cwd },
+      )
+    ).trim();
+    const created = await findPullRequest(input.cwd, branch.branch);
+    if (created) {
+      prs.push({ issueNumber: branch.issueNumber, ...created });
+      continue;
+    }
+
+    const number = Number(url.match(/\/pull\/(\d+)$/)?.[1]);
+    if (!Number.isSafeInteger(number)) throw new Error(`Could not parse created PR URL: ${url}`);
+    prs.push({ issueNumber: branch.issueNumber, number, url });
+  }
+
+  await runCommand("stack", ["sync", "--apply"], { cwd: input.cwd });
+  return prs;
 }
 
 async function ensureFinalPullRequest(input: {
@@ -865,13 +990,24 @@ function toConventionalPrTitle(title: string): string {
     : `feat: ${subject}`;
 }
 
-function parseArgs(args: string): { issue: string | undefined; mode: PiWorkerSpawnMode } {
+function parseArgs(args: string): {
+  issue: string | undefined;
+  mode: PiWorkerSpawnMode;
+  publishMode?: OrchestratorPublishMode;
+} {
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const headed = parts.includes("--headed");
+  const publishMode = parts.includes("--stack")
+    ? "stacked-prs"
+    : parts.includes("--no-pr")
+      ? "none"
+      : undefined;
+  const flags = new Set(["--headed", "--stack", "--no-pr"]);
 
   return {
-    issue: parts.find((part) => part !== "--headed"),
+    issue: parts.find((part) => !flags.has(part)),
     mode: headed ? "headed" : "background",
+    ...(publishMode ? { publishMode } : {}),
   };
 }
 
