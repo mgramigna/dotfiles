@@ -34,6 +34,7 @@ import {
   writeWorkerPrompt,
 } from "./storage";
 import { buildWorkerPrompt } from "./worker-prompt";
+import { autocompleteSelect } from "../autocomplete-select";
 import { createWorktrunkWorktree } from "./worktrunk";
 
 type CommandContext = {
@@ -251,19 +252,21 @@ async function doctorCheck(name: string, check: () => Promise<void>): Promise<st
 }
 
 async function runSetup(ctx: CommandContext): Promise<string> {
-  const select = ctx.ui.select;
   const input = ctx.ui.input;
   const confirm = ctx.ui.confirm;
-  if (!select) return "Orchestrator setup requires a UI select prompt, but this Pi build does not expose one.";
   if (!confirm) return "Orchestrator setup requires a UI confirm prompt, but this Pi build does not expose one.";
 
   const projectPath = getConfigPath(ctx.cwd);
   const globalPath = getGlobalConfigPath();
-  const scope = await select("Create orchestrator config", [
-    `Global (${globalPath})`,
-    `Project (${projectPath})`,
-    "Cancel",
-  ]);
+  const scope = await autocompleteSelect(ctx, {
+    title: "Create orchestrator config",
+    items: [
+      `Global (${globalPath})`,
+      `Project (${projectPath})`,
+      "Cancel",
+    ].map((choice) => ({ value: choice, label: choice })),
+    maxVisible: 3,
+  });
   if (!scope || scope === "Cancel") return "Orchestrator setup cancelled.";
   if (scope.startsWith("Project") && ctx.isProjectTrusted?.() === false) {
     return "Project is not trusted; refusing to write project .pi/orchestrator.json.";
@@ -280,7 +283,12 @@ async function runSetup(ctx: CommandContext): Promise<string> {
     "Enter manually",
     "Cancel",
   ];
-  const modelChoice = await select("Orchestrator worker model", modelChoices);
+  const modelChoice = await autocompleteSelect(ctx, {
+    title: "Orchestrator worker model",
+    items: modelChoices.map((choice) => ({ value: choice, label: choice })),
+    maxVisible: 12,
+    noMatchText: "  No matching models",
+  });
   if (!modelChoice || modelChoice === "Cancel") return "Orchestrator setup cancelled.";
 
   let model: string | undefined;
@@ -294,7 +302,11 @@ async function runSetup(ctx: CommandContext): Promise<string> {
     model = modelChoice;
   }
 
-  const thinkingChoice = await select("Orchestrator worker thinking level", ["Default", "off", "minimal", "low", "medium", "high", "xhigh", "Cancel"]);
+  const thinkingChoice = await autocompleteSelect(ctx, {
+    title: "Orchestrator worker thinking level",
+    items: ["Default", "off", "minimal", "low", "medium", "high", "xhigh", "Cancel"].map((choice) => ({ value: choice, label: choice })),
+    maxVisible: 8,
+  });
   if (!thinkingChoice || thinkingChoice === "Cancel") return "Orchestrator setup cancelled.";
   const thinking = thinkingChoice === "Default" ? undefined : parseSetupThinking(thinkingChoice);
 
@@ -302,12 +314,16 @@ async function runSetup(ctx: CommandContext): Promise<string> {
   const maxParallel = maxParallelInput ? Number(maxParallelInput) : 2;
   if (!Number.isSafeInteger(maxParallel) || maxParallel < 1) throw new Error("maxParallel must be a positive integer");
 
-  const publishModeChoice = await select("Orchestrator publish mode", [
-    "Single PR",
-    "Stacked PRs",
-    "No PR",
-    "Cancel",
-  ]);
+  const publishModeChoice = await autocompleteSelect(ctx, {
+    title: "Orchestrator publish mode",
+    items: [
+      "Single PR",
+      "Stacked PRs",
+      "No PR",
+      "Cancel",
+    ].map((choice) => ({ value: choice, label: choice })),
+    maxVisible: 4,
+  });
   if (!publishModeChoice || publishModeChoice === "Cancel") return "Orchestrator setup cancelled.";
   const publishMode = parseSetupPublishMode(publishModeChoice);
 

@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 import { getAgentDir, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { autocompleteSelect } from "./autocomplete-select";
+
 const execFileAsync = promisify(execFile);
 
 const RUN_DIR = join(getAgentDir(), "overseer");
@@ -538,7 +540,12 @@ async function runSetup(ctx: ExtensionContext): Promise<string> {
 		"Enter manually",
 		"Cancel",
 	];
-	const modelChoice = await select("Overseer model", modelChoices);
+	const modelChoice = await autocompleteSelect(ctx, {
+		title: "Overseer model",
+		items: modelChoices.map((choice) => ({ value: choice, label: choice })),
+		maxVisible: 12,
+		noMatchText: "  No matching models",
+	});
 	if (!modelChoice || modelChoice === "Cancel") return "Overseer setup cancelled.";
 
 	let model: string | undefined;
@@ -552,7 +559,11 @@ async function runSetup(ctx: ExtensionContext): Promise<string> {
 		model = modelChoice;
 	}
 
-	const thinkingChoice = await select("Overseer thinking level", ["Default", ...THINKING_LEVELS, "Cancel"]);
+	const thinkingChoice = await autocompleteSelect(ctx, {
+		title: "Overseer thinking level",
+		items: ["Default", ...THINKING_LEVELS, "Cancel"].map((choice) => ({ value: choice, label: choice })),
+		maxVisible: THINKING_LEVELS.length + 2,
+	});
 	if (!thinkingChoice || thinkingChoice === "Cancel") return "Overseer setup cancelled.";
 	const thinking = thinkingChoice === "Default" ? undefined : parseOptionalThinkingLevel(thinkingChoice);
 	const config: OverseerConfig = {
