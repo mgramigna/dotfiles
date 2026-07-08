@@ -116,7 +116,6 @@ return {
 
 			vim.lsp.enable({
 				"astro",
-				"copilot_ls",
 				"jdtls",
 				"lua_ls",
 				"prismals",
