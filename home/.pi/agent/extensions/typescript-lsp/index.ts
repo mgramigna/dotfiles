@@ -1,8 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, extname, normalize, resolve } from "node:path";
+import { basename, dirname, extname, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -36,25 +36,29 @@ const TYPESCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".j
 const ERROR = 1;
 const STARTUP_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 10_000;
+const DIAGNOSTIC_REQUEST_TIMEOUT_MS = 120_000;
 const DIAGNOSTIC_SETTLE_MS = 1_200;
 const MAX_REPORTED_DIAGNOSTICS = 30;
-const VTSLS_MAX_OLD_SPACE_MB = 12 * 1024;
-const EXTENSION_PATH_MARKER = "/vtsls-diagnostics/index.ts";
+const EXTENSION_PATH_MARKER = "/typescript-lsp/index.ts";
 const PI_EXTENSIONS_PATH_MARKERS = ["/.pi/agent/extensions/", "/.pi/agents/extensions/"];
 const REFERENCE_REPO_ROOTS = [resolve(homedir(), ".local/share/pi/references")];
 
 export default function (pi: ExtensionAPI) {
-	let client: VtslsClient | undefined;
-	let lastContext: ExtensionContext | undefined;
+	const clients = new Map<string, TypeScriptLspClient>();
 	let lastHealth = "not started";
 	let lastCrash: string | undefined;
 	const diagnosticState = new Map<string, DiagnosticState>();
 	const pendingReports = new Map<string, NodeJS.Timeout>();
 
-	function getClient(ctx: ExtensionContext): VtslsClient {
-		lastContext = ctx;
+	function getClient(ctx: ExtensionContext, filePath?: string): TypeScriptLspClient {
+		const root = discoverProjectRoot(filePath ?? ctx.cwd, ctx.cwd);
+		const typescript = findInstalledTypeScript(root);
+		if (!typescript || !isTypeScript7OrNewer(typescript.version)) {
+			throw new Error(typescript ? `project uses TypeScript ${typescript.version}; native LSP requires TypeScript 7+` : "project does not have a local TypeScript installation");
+		}
+		let client = clients.get(root);
 		if (!client || client.disposed) {
-			client = new VtslsClient(ctx.cwd, (message) => {
+			client = new TypeScriptLspClient(root, (message) => {
 				lastHealth = message;
 			}, (uri, diagnostics) => {
 				const filePath = fileURLToPathSafe(uri) ?? uri;
@@ -62,17 +66,13 @@ export default function (pi: ExtensionAPI) {
 					diagnosticState.delete(uri);
 					return;
 				}
-				diagnosticState.set(uri, {
-					uri,
-					path: filePath,
-					diagnostics,
-					updatedAt: Date.now(),
-				});
+				diagnosticState.set(uri, { uri, path: filePath, diagnostics, updatedAt: Date.now() });
 			});
+			clients.set(root, client);
 			void client.start().catch((error) => {
 				lastCrash = String(error?.message ?? error);
 				lastHealth = `unavailable: ${lastCrash}`;
-				client = undefined;
+				clients.delete(root);
 			});
 		}
 		return client;
@@ -80,9 +80,14 @@ export default function (pi: ExtensionAPI) {
 
 	function scheduleDiagnostics(ctx: ExtensionContext, filePath: string) {
 		if (!isTypeScriptLike(filePath)) return;
-		lastContext = ctx;
 		const absolutePath = resolve(ctx.cwd, filePath);
 		if (isIgnoredDiagnosticPath(absolutePath)) return;
+		const root = discoverProjectRoot(absolutePath, ctx.cwd);
+		if (!isTypeScript7Project(root)) {
+			lastHealth = "disabled: current project is not using TypeScript 7+";
+			updateStatus(ctx);
+			return;
+		}
 		const uri = pathToFileURL(absolutePath).toString();
 		const existing = pendingReports.get(uri);
 		if (existing) clearTimeout(existing);
@@ -106,8 +111,8 @@ export default function (pi: ExtensionAPI) {
 			const body = formatDiagnostics([{ ...(state as DiagnosticState), diagnostics: errors }]);
 			pi.sendMessage(
 				{
-					customType: "vtsls-diagnostics",
-					content: `vtsls reported TypeScript error diagnostics after ${basename(absolutePath)} was read or changed:\n\n${body}`,
+					customType: "typescript-lsp-diagnostics",
+					content: `TypeScript native LSP reported error diagnostics after ${basename(absolutePath)} was read or changed:\n\n${body}`,
 					display: true,
 					details: { uri, diagnostics: errors },
 				},
@@ -126,20 +131,19 @@ export default function (pi: ExtensionAPI) {
 			if (isIgnoredDiagnosticPath(state.path)) return total;
 			return total + state.diagnostics.filter((d) => d.severity === ERROR).length;
 		}, 0);
-		const text = errorCount > 0 ? `vtsls: ${errorCount} err` : "vtsls: ok";
-		ctx.ui.setStatus?.("vtsls", ctx.ui.theme.fg("dim", text));
+		const text = errorCount > 0 ? `ts-lsp: ${errorCount} err` : "ts-lsp: ok";
+		ctx.ui.setStatus?.("typescript-lsp", ctx.ui.theme.fg("dim", text));
 	}
 
 	pi.on("session_start", (_event, ctx) => {
-		lastContext = ctx;
 		updateStatus(ctx);
 	});
 
 	pi.on("session_shutdown", async () => {
 		for (const timer of pendingReports.values()) clearTimeout(timer);
 		pendingReports.clear();
-		await client?.stop();
-		client = undefined;
+		await Promise.all([...clients.values()].map((client) => client.stop()));
+		clients.clear();
 	});
 
 	pi.on("tool_result", (event, ctx) => {
@@ -147,41 +151,20 @@ export default function (pi: ExtensionAPI) {
 		if (event.toolName !== "read" && event.toolName !== "write" && event.toolName !== "edit") return;
 		const input = event.input as { path?: unknown };
 		if (typeof input.path !== "string") return;
+		// Fire-and-forget: never await the language server from the tool pipeline.
 		scheduleDiagnostics(ctx, input.path);
 	});
 
-	pi.registerCommand("vtsls-doctor", {
-		description: "Check the vtsls diagnostics extension and language-server health",
+	pi.registerCommand("typescript-lsp-doctor", {
+		description: "Check the TypeScript native LSP diagnostics extension and language-server health",
 		handler: async (_args, ctx) => {
 			const report = await doctor(ctx);
 			ctx.ui.notify(report, report.includes("unavailable") || report.includes("degraded") ? "warning" : "info");
 		},
 	});
 
-	pi.registerCommand("vtsls-install", {
-		description: "Install vtsls globally with npm for the diagnostics extension",
-		handler: async (_args, ctx) => {
-			const ok = await ctx.ui.confirm(
-				"Install vtsls?",
-				"Run: npm install -g @vtsls/language-server\n\nThis makes the vtsls binary available to the diagnostics extension.",
-			);
-			if (!ok) return;
-			const result = await pi.exec("npm", ["install", "-g", "@vtsls/language-server"], { timeout: 120_000 });
-			const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
-			if (result.code === 0) {
-				client = undefined;
-				lastCrash = undefined;
-				lastHealth = "installed; run /vtsls-doctor to verify";
-				ctx.ui.notify(`Installed @vtsls/language-server.\n${output}`.trim(), "info");
-			} else {
-				lastHealth = `install failed with exit code ${result.code}`;
-				ctx.ui.notify(`vtsls install failed.\n${output}`.trim(), "error");
-			}
-		},
-	});
-
-	pi.registerCommand("vtsls-refresh", {
-		description: "Refresh vtsls diagnostics; pass paths or --hard to restart vtsls first",
+	pi.registerCommand("typescript-lsp-refresh", {
+		description: "Refresh TypeScript native LSP diagnostics; pass paths or --hard to restart first",
 		handler: async (args, ctx) => {
 			const { hard, paths } = parseRefreshArgs(args, ctx.cwd);
 			const text = await refreshDiagnostics(ctx, paths, hard);
@@ -189,19 +172,18 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("vtsls-diagnostics", {
-		description: "Inject current vtsls error diagnostics into the conversation",
+	pi.registerCommand("typescript-lsp-diagnostics", {
+		description: "Inject current TypeScript native LSP error diagnostics into the conversation",
 		handler: async (_args, ctx) => {
-			const text = currentDiagnosticsText();
-			pi.sendMessage({ customType: "vtsls-diagnostics", content: text, display: true }, { triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" });
+			pi.sendMessage({ customType: "typescript-lsp-diagnostics", content: currentDiagnosticsText(), display: true }, { triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 		},
 	});
 
 	pi.registerTool({
-		name: "vtsls_diagnostics",
-		label: "VTSLS Diagnostics",
-		description: "Report the current error-level TypeScript diagnostics captured from vtsls.",
-		promptSnippet: "Report current vtsls TypeScript error diagnostics",
+		name: "typescript_lsp_diagnostics",
+		label: "TypeScript LSP Diagnostics",
+		description: "Report the current error-level TypeScript diagnostics captured from the native TypeScript 7 LSP.",
+		promptSnippet: "Report current TypeScript native LSP error diagnostics",
 		parameters: Type.Object({}),
 		async execute() {
 			return { content: [{ type: "text", text: currentDiagnosticsText() }], details: { diagnostics: [...diagnosticState.values()] } };
@@ -209,12 +191,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "vtsls_refresh_diagnostics",
-		label: "VTSLS Refresh Diagnostics",
-		description: "Refresh vtsls diagnostics by re-reading known TS/JS files, optionally restarting vtsls first.",
+		name: "typescript_lsp_refresh_diagnostics",
+		label: "TypeScript LSP Refresh Diagnostics",
+		description: "Refresh native TypeScript LSP diagnostics by re-reading known TS/JS files, optionally restarting first.",
 		parameters: Type.Object({
-			paths: Type.Optional(Type.Array(Type.String({ description: "Specific TS/JS file paths to refresh. Defaults to files already known by vtsls." }))),
-			hard: Type.Optional(Type.Boolean({ description: "Restart vtsls and clear cached diagnostics before refreshing." })),
+			paths: Type.Optional(Type.Array(Type.String({ description: "Specific TS/JS file paths to refresh. Defaults to files already known by the TypeScript LSP." }))),
+			hard: Type.Optional(Type.Boolean({ description: "Restart the TypeScript LSP and clear cached diagnostics before refreshing." })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const paths = params.paths?.map((path) => resolve(ctx.cwd, path));
@@ -224,9 +206,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "vtsls_doctor",
-		label: "VTSLS Doctor",
-		description: "Healthcheck for the vtsls diagnostics extension and language server. If vtsls is missing, reports the npm install command and slash command to run.",
+		name: "typescript_lsp_doctor",
+		label: "TypeScript LSP Doctor",
+		description: "Healthcheck for the TypeScript native LSP diagnostics extension and language server.",
 		parameters: Type.Object({}),
 		async execute(_id, _params, _signal, _onUpdate, ctx) {
 			return { content: [{ type: "text", text: await doctor(ctx) }], details: { health: lastHealth, lastCrash } };
@@ -235,71 +217,82 @@ export default function (pi: ExtensionAPI) {
 
 	async function doctor(ctx: ExtensionContext): Promise<string> {
 		try {
+			const root = discoverProjectRoot(ctx.cwd, ctx.cwd);
+			const typescript = findInstalledTypeScript(root);
+			if (!typescript || !isTypeScript7OrNewer(typescript.version)) {
+				lastHealth = "disabled: current project is not using TypeScript 7+";
+				return [
+					"TypeScript native LSP diagnostics: disabled",
+					`cwd: ${ctx.cwd}`,
+					typescript ? `typescript: ${typescript.version} (${typescript.packageJsonPath})` : "typescript: no local installation found",
+					"reason: native LSP requires a local TypeScript 7+ installation",
+				].join("\n");
+			}
 			const lsp = getClient(ctx);
 			await lsp.ensureReady();
 			return [
-				`vtsls diagnostics: healthy`,
+				"TypeScript native LSP diagnostics: healthy",
 				`cwd: ${ctx.cwd}`,
 				`server: ${lsp.commandLine}`,
-				`memory: --max-old-space-size=${VTSLS_MAX_OLD_SPACE_MB}`,
 				`state: ${lastHealth}`,
 				lastCrash ? `last issue: ${lastCrash}` : undefined,
 			].filter(Boolean).join("\n");
 		} catch (error) {
 			lastCrash = String((error as Error)?.message ?? error);
 			return [
-				`vtsls diagnostics: unavailable`,
+				"TypeScript native LSP diagnostics: unavailable",
 				`cwd: ${ctx.cwd}`,
 				`state: ${lastHealth}`,
 				`error: ${lastCrash}`,
 				"",
-				"Install options:",
-				"  /vtsls-install",
-				"  npm install -g @vtsls/language-server",
+				"Install TypeScript 7 in the project, or ensure a TypeScript 7 tsc is on PATH:",
+				"  npm install -D typescript@7.0.2",
 				"",
-				"The extension can also use npx --yes @vtsls/language-server --stdio as a fallback, but a global install is faster and more reliable.",
+				"The extension starts the server with: tsc --lsp --stdio. It does not use @typescript/native-preview or tsgo.",
 			].join("\n");
 		}
 	}
 
 	async function refreshDiagnostics(ctx: ExtensionContext, paths?: string[], hard = false): Promise<string> {
 		try {
-			lastContext = ctx;
 			for (const timer of pendingReports.values()) clearTimeout(timer);
 			pendingReports.clear();
 
 			const knownPaths = [...diagnosticState.values()].map((state) => state.path);
 			if (hard) {
-				await client?.stop();
-				client = undefined;
+				await Promise.all([...clients.values()].map((client) => client.stop()));
+				clients.clear();
 				diagnosticState.clear();
 				lastHealth = "hard refresh requested; cache cleared";
 			}
 
 			const refreshablePaths = (paths?.length ? paths : knownPaths)
 				.map((filePath) => resolve(ctx.cwd, filePath))
-				.filter((filePath, index, all) => isTypeScriptLike(filePath) && !isIgnoredDiagnosticPath(filePath) && all.indexOf(filePath) === index);
+				.filter((filePath, index, all) => {
+					if (!isTypeScriptLike(filePath) || isIgnoredDiagnosticPath(filePath) || all.indexOf(filePath) !== index) return false;
+					return isTypeScript7Project(discoverProjectRoot(filePath, ctx.cwd));
+				});
 
 			if (refreshablePaths.length === 0) {
 				updateStatus(ctx);
-				return hard ? "vtsls diagnostics cache cleared; no known TS/JS files to refresh." : "No known TS/JS files to refresh. Pass paths to /vtsls-refresh or vtsls_refresh_diagnostics.";
+				return hard ? "TypeScript LSP diagnostics cache cleared; no known TS/JS files to refresh." : "No known TS/JS files to refresh. Pass paths to /typescript-lsp-refresh or typescript_lsp_refresh_diagnostics.";
 			}
 
 			await refreshPaths(ctx, refreshablePaths);
 			updateStatus(ctx);
-			return `Refreshed vtsls diagnostics for ${refreshablePaths.length} file(s)${hard ? " after restart" : ""}.`;
+			return `Refreshed TypeScript LSP diagnostics for ${refreshablePaths.length} file(s)${hard ? " after restart" : ""}.`;
 		} catch (error) {
 			lastCrash = String((error as Error)?.message ?? error);
 			lastHealth = `refresh failed: ${lastCrash}`;
 			updateStatus(ctx);
-			return `vtsls diagnostics refresh failed: ${lastCrash}`;
+			return `TypeScript LSP diagnostics refresh failed: ${lastCrash}`;
 		}
 	}
 
 	async function refreshPaths(ctx: ExtensionContext, paths: string[]): Promise<void> {
-		const lsp = getClient(ctx);
-		await lsp.ensureReady();
 		for (const absolutePath of paths) {
+			const lsp = getClient(ctx, absolutePath);
+			await lsp.ensureReady();
 			const uri = pathToFileURL(absolutePath).toString();
 			diagnosticState.delete(uri);
 			await lsp.didOpenOrChange(absolutePath);
@@ -312,12 +305,12 @@ export default function (pi: ExtensionAPI) {
 			.filter((state) => !isIgnoredDiagnosticPath(state.path))
 			.map((state) => ({ ...state, diagnostics: state.diagnostics.filter((d) => d.severity === ERROR) }))
 			.filter((state) => state.diagnostics.length > 0);
-		if (states.length === 0) return `No current error-level vtsls diagnostics. Health: ${lastHealth}.`;
+		if (states.length === 0) return `No current error-level TypeScript native LSP diagnostics. Health: ${lastHealth}.`;
 		return formatDiagnostics(states);
 	}
 }
 
-class VtslsClient {
+class TypeScriptLspClient {
 	private child?: ChildProcessWithoutNullStreams;
 	private nextId = 1;
 	private buffer = Buffer.alloc(0);
@@ -355,6 +348,18 @@ class VtslsClient {
 		} else {
 			this.notify("textDocument/didChange", { textDocument: { uri, version }, contentChanges: [{ text }] });
 		}
+		await sleep(DIAGNOSTIC_SETTLE_MS);
+		await this.pullDiagnostics(uri);
+	}
+
+	async pullDiagnostics(uri: string): Promise<void> {
+		const response = await this.request(
+			"textDocument/diagnostic",
+			{ textDocument: { uri } },
+			DIAGNOSTIC_REQUEST_TIMEOUT_MS,
+		);
+		const diagnostics = diagnosticsFromDocumentDiagnosticResponse(response);
+		if (diagnostics) this.onDiagnostics(uri, diagnostics);
 	}
 
 	async stop(): Promise<void> {
@@ -368,14 +373,11 @@ class VtslsClient {
 	}
 
 	private async startInner(): Promise<void> {
-		const candidates: Array<{ command: string; args: string[] }> = [
-			{ command: "vtsls", args: ["--stdio"] },
-			{ command: "npx", args: ["--yes", "@vtsls/language-server", "--stdio"] },
-		];
+		const candidates = buildTscCandidates(this.cwd);
 		let lastError: unknown;
 		for (const candidate of candidates) {
 			try {
-				await this.spawnAndInitialize(candidate.command, candidate.args);
+				await this.spawnAndInitialize(candidate.command, candidate.args, candidate.cwd);
 				return;
 			} catch (error) {
 				lastError = error;
@@ -383,20 +385,13 @@ class VtslsClient {
 				this.disposed = false;
 			}
 		}
-		throw new Error(`Unable to start vtsls: ${String((lastError as Error)?.message ?? lastError)}`);
+		throw new Error(`Unable to start TypeScript native LSP from ${this.cwd}: ${String((lastError as Error)?.message ?? lastError)}`);
 	}
 
-	private async spawnAndInitialize(command: string, args: string[]): Promise<void> {
-		this.commandLine = [command, ...args].join(" ");
+	private async spawnAndInitialize(command: string, args: string[], cwd: string): Promise<void> {
+		this.commandLine = `(cd ${cwd} && ${[command, ...args].join(" ")})`;
 		this.onHealth(`starting ${this.commandLine}`);
-		this.child = spawn(command, args, {
-			cwd: this.cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-			env: {
-				...process.env,
-				NODE_OPTIONS: withMaxOldSpaceSize(process.env.NODE_OPTIONS, VTSLS_MAX_OLD_SPACE_MB),
-			},
-		});
+		this.child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], env: process.env });
 		const startupError = new Promise<never>((_resolve, reject) => {
 			this.child?.once("error", (error) => reject(error));
 		});
@@ -414,14 +409,19 @@ class VtslsClient {
 			this.onHealth(`exited code=${code ?? "null"} signal=${signal ?? "null"}`);
 			for (const request of this.pending.values()) {
 				clearTimeout(request.timer);
-				request.reject(new Error("vtsls exited"));
+				request.reject(new Error("TypeScript LSP exited"));
 			}
 			this.pending.clear();
 		});
 		await Promise.race([this.request("initialize", {
 			processId: process.pid,
 			rootUri: pathToFileURL(this.cwd).toString(),
-			capabilities: { textDocument: { publishDiagnostics: { relatedInformation: true, versionSupport: true } } },
+			capabilities: {
+				textDocument: {
+					publishDiagnostics: { relatedInformation: true, versionSupport: true },
+					diagnostic: { relatedDocumentSupport: true },
+				},
+			},
 			initializationOptions: {},
 		}, STARTUP_TIMEOUT_MS), startupError]);
 		this.notify("initialized", {});
@@ -445,7 +445,7 @@ class VtslsClient {
 	}
 
 	private send(payload: unknown) {
-		if (!this.child || this.child.killed) throw new Error("vtsls is not running");
+		if (!this.child || this.child.killed) throw new Error("TypeScript LSP is not running");
 		const body = Buffer.from(JSON.stringify(payload), "utf8");
 		this.child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
 		this.child.stdin.write(body);
@@ -482,7 +482,141 @@ class VtslsClient {
 		}
 		if (message.method === "textDocument/publishDiagnostics") {
 			this.onDiagnostics(message.params.uri, message.params.diagnostics ?? []);
+			return;
 		}
+		if (message.id !== undefined && typeof message.method === "string") {
+			this.handleServerRequest(message);
+		}
+	}
+
+	private handleServerRequest(message: { id: string | number | null; method: string; params?: unknown }) {
+		let result: unknown = null;
+		switch (message.method) {
+			case "workspace/configuration":
+				result = configurationResponse(message.params);
+				break;
+			case "client/registerCapability":
+			case "client/unregisterCapability":
+			case "window/workDoneProgress/create":
+			case "workspace/diagnostic/refresh":
+			case "workspace/inlayHint/refresh":
+			case "workspace/codeLens/refresh":
+				result = null;
+				break;
+			default:
+				this.onHealth(`unhandled server request: ${message.method}`);
+				result = null;
+		}
+		this.send({ jsonrpc: "2.0", id: message.id, result });
+	}
+}
+
+type TscCandidate = { command: string; args: string[]; cwd: string };
+type TypeScriptInstallation = { root: string; version: string; packageJsonPath: string };
+
+function discoverProjectRoot(filePath: string, fallbackCwd: string): string {
+	const absolutePath = resolve(fallbackCwd, filePath);
+	let dir = isDirectoryPath(absolutePath) ? absolutePath : dirname(absolutePath);
+	let firstPackage: string | undefined;
+	let firstWorkspace: string | undefined;
+	for (const current of ancestors(dir)) {
+		if (isRepoPackageRoot(current)) {
+			const typescript = findLocalInstalledTypeScript(current);
+			if (typescript && isTypeScript7OrNewer(typescript.version)) return current;
+			firstPackage ??= current;
+		}
+		if (existsSync(resolve(current, "tsconfig.json"))) return current;
+		if (!firstWorkspace && hasPackageManagerMarker(current)) firstWorkspace = current;
+	}
+	return firstPackage ?? firstWorkspace ?? fallbackCwd;
+}
+
+function isTypeScript7Project(root: string): boolean {
+	const typescript = findInstalledTypeScript(root);
+	return Boolean(typescript && isTypeScript7OrNewer(typescript.version));
+}
+
+function findInstalledTypeScript(root: string): TypeScriptInstallation | undefined {
+	for (const current of ancestors(root)) {
+		if (!isRepoPackageRoot(current)) continue;
+		const typescript = findLocalInstalledTypeScript(current);
+		if (typescript) return typescript;
+	}
+	return undefined;
+}
+
+function findLocalInstalledTypeScript(root: string): TypeScriptInstallation | undefined {
+	const packageJsonPath = resolve(root, "node_modules/typescript/package.json");
+	if (!existsSync(packageJsonPath)) return undefined;
+	try {
+		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: unknown };
+		if (typeof packageJson.version === "string") return { root, version: packageJson.version, packageJsonPath };
+	} catch {}
+	return undefined;
+}
+
+function isRepoPackageRoot(dir: string): boolean {
+	return !isNodeModulesPath(dir) && existsSync(resolve(dir, "package.json"));
+}
+
+function isNodeModulesPath(filePath: string): boolean {
+	return normalize(filePath).replaceAll("\\", "/").split("/").includes("node_modules");
+}
+
+function isTypeScript7OrNewer(version: string): boolean {
+	const major = Number(/^(\d+)/.exec(version)?.[1]);
+	return Number.isFinite(major) && major >= 7;
+}
+
+function buildTscCandidates(root: string): TscCandidate[] {
+	const candidates: TscCandidate[] = [];
+	const seen = new Set<string>();
+	const add = (candidate: TscCandidate) => {
+		const key = `${candidate.cwd}\0${candidate.command}\0${candidate.args.join("\0")}`;
+		if (seen.has(key)) return;
+		seen.add(key);
+		candidates.push(candidate);
+	};
+
+	for (const current of ancestors(root)) {
+		const typescript = findInstalledTypeScript(current);
+		if (!typescript || !isTypeScript7OrNewer(typescript.version)) continue;
+		const localTsc = resolve(typescript.root, "node_modules/.bin/tsc");
+		if (existsSync(localTsc)) add({ command: localTsc, args: ["--lsp", "--stdio"], cwd: typescript.root });
+	}
+
+	return candidates;
+}
+
+function detectPackageManager(root: string): "yarn" | "pnpm" | "npm" | undefined {
+	for (const current of ancestors(root)) {
+		if (existsSync(resolve(current, "yarn.lock"))) return "yarn";
+		if (existsSync(resolve(current, "pnpm-lock.yaml"))) return "pnpm";
+		if (existsSync(resolve(current, "package-lock.json"))) return "npm";
+	}
+	return undefined;
+}
+
+function hasPackageManagerMarker(dir: string): boolean {
+	return existsSync(resolve(dir, "yarn.lock")) || existsSync(resolve(dir, "pnpm-lock.yaml")) || existsSync(resolve(dir, "package-lock.json"));
+}
+
+function ancestors(start: string): string[] {
+	const result: string[] = [];
+	let current = resolve(start);
+	while (true) {
+		result.push(current);
+		const parent = dirname(current);
+		if (parent === current) return result;
+		current = parent;
+	}
+}
+
+function isDirectoryPath(filePath: string): boolean {
+	try {
+		return statSync(filePath).isDirectory();
+	} catch {
+		return false;
 	}
 }
 
@@ -496,6 +630,36 @@ function languageIdFor(filePath: string): string {
 	if (ext === ".jsx") return "javascriptreact";
 	if (ext === ".js") return "javascript";
 	return "typescript";
+}
+
+function configurationResponse(params: unknown): unknown[] {
+	const items = params && typeof params === "object" && Array.isArray((params as { items?: unknown }).items)
+		? (params as { items: unknown[] }).items
+		: [];
+	return items.map(() => ({}));
+}
+
+function diagnosticsFromDocumentDiagnosticResponse(response: unknown): Diagnostic[] | undefined {
+	if (!response || typeof response !== "object") return undefined;
+	const report = response as { kind?: string; items?: unknown; relatedDocuments?: Record<string, unknown> };
+	if (report.kind === "unchanged") return undefined;
+	const diagnostics = Array.isArray(report.items) ? report.items.filter(isDiagnostic) : [];
+	if (report.relatedDocuments) {
+		for (const related of Object.values(report.relatedDocuments)) {
+			const relatedDiagnostics = diagnosticsFromDocumentDiagnosticResponse(related);
+			if (relatedDiagnostics) diagnostics.push(...relatedDiagnostics);
+		}
+	}
+	return diagnostics;
+}
+
+function isDiagnostic(value: unknown): value is Diagnostic {
+	return Boolean(
+		value &&
+			typeof value === "object" &&
+			"message" in value &&
+			"range" in value,
+	);
 }
 
 function formatDiagnostics(states: DiagnosticState[]): string {
@@ -547,14 +711,6 @@ function parseRefreshArgs(args: string, cwd: string): { hard: boolean; paths: st
 		.filter((token) => token !== "--hard" && token !== "-h")
 		.map((path) => resolve(cwd, path));
 	return { hard, paths: paths.length > 0 ? paths : undefined };
-}
-
-function withMaxOldSpaceSize(existing: string | undefined, megabytes: number): string {
-	const withoutOldSpace = (existing ?? "")
-		.split(/\s+/)
-		.filter((option) => option && !option.startsWith("--max-old-space-size="))
-		.join(" ");
-	return [withoutOldSpace, `--max-old-space-size=${megabytes}`].filter(Boolean).join(" ");
 }
 
 function sleep(ms: number): Promise<void> {
