@@ -25,6 +25,7 @@ const TRANSITION_TOOLS = {
 } as const;
 
 const TRANSITION_TOOL_NAMES = new Set<string>(Object.values(TRANSITION_TOOLS));
+const TRIO_DISALLOWED_TOOL_NAMES = new Set<string>(["overseer_review", "overseer_read_pane"]);
 const READ_ONLY_TOOL_NAMES = ["read", "bash", "grep", "find", "ls", "ffgrep", "fffind"];
 const EXECUTION_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls", "ffgrep", "fffind"];
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -145,7 +146,7 @@ function uniqueAvailable(names: string[], availableTools: Set<string>): string[]
 
 function getToolsForPhase(phase: TrioPhase, originalTools: string[], availableToolNames: string[]): string[] {
 	const availableTools = new Set(availableToolNames);
-	const originalWithoutTransitions = originalTools.filter((name) => !TRANSITION_TOOL_NAMES.has(name));
+	const originalWithoutTransitions = originalTools.filter((name) => !TRANSITION_TOOL_NAMES.has(name) && !TRIO_DISALLOWED_TOOL_NAMES.has(name));
 	if (phase === "idle") return uniqueAvailable(originalWithoutTransitions, availableTools);
 	if (phase === "executing") return uniqueAvailable([...originalWithoutTransitions, ...EXECUTION_TOOL_NAMES, TRANSITION_TOOLS.submit], availableTools);
 	const readOnlyBase = originalWithoutTransitions.filter((name) => name !== "edit" && name !== "write");
@@ -168,7 +169,7 @@ function getPhaseInstructions(state: TrioWorkflowState, config: TrioConfig): str
 	}
 	if (state.phase === "reviewing") {
 		const round = `${state.reviewRound}/${config.maxReviewRounds ?? MAX_REVIEW_ROUNDS}`;
-		return appendRoleSystemPrompt(`[TRIO PHASE: REVIEW — round ${round}]\nYou are the reviewer. Independently review the executor's work and available validation evidence; do not rely only on the executor summary.\nDo not edit files yourself. If changes are needed, call ${TRANSITION_TOOLS.revise}. Otherwise call ${TRANSITION_TOOLS.approve} and clearly record any remaining concerns.\nThe transition tool must be the only tool call in that response.`, config.reviewer.systemPrompt);
+		return appendRoleSystemPrompt(`[TRIO PHASE: REVIEW — round ${round}]\nYou are the reviewer. Independently review the executor's work and available validation evidence; do not rely only on the executor summary.\nDo not run overseer review or use overseer tools; Trio review is a separate workflow and you should perform the review yourself with the available read-only tools.\nDo not edit files yourself. If changes are needed, call ${TRANSITION_TOOLS.revise}. Otherwise call ${TRANSITION_TOOLS.approve} and clearly record any remaining concerns.\nThe transition tool must be the only tool call in that response.`, config.reviewer.systemPrompt);
 	}
 	if (state.phase === "finalizing") {
 		return appendRoleSystemPrompt(`[TRIO PHASE: FINAL RESPONSE]\nThe implementation has been reviewed and approved. Give the user the final concise summary, including changes made, validation run, and any remaining caveats.\nDo not call additional Trio transition tools.`, config.planner.systemPrompt);
