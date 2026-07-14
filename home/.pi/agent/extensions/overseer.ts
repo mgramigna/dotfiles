@@ -669,6 +669,22 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("overseer", {
 		description: "Overseer adversarial review: review [--pane/--headed] [--staged|--cached|--all], pane, read, doctor, setup, help",
+		getArgumentCompletions(prefix: string) {
+			const items = [
+				{ value: "review", label: "review", description: "Run headless review of current diff" },
+				{ value: "review --pane", label: "review --pane", description: "Spawn review in a herdr pane" },
+				{ value: "review --staged", label: "review --staged", description: "Review staged changes" },
+				{ value: "review --all", label: "review --all", description: "Review staged and unstaged changes" },
+				{ value: "pane", label: "pane", description: "Show current overseer pane" },
+				{ value: "status", label: "status", description: "Show current overseer pane/status" },
+				{ value: "read", label: "read", description: "Read latest overseer pane output" },
+				{ value: "doctor", label: "doctor", description: "Check overseer setup" },
+				{ value: "setup", label: "setup", description: "Configure overseer" },
+				{ value: "help", label: "help", description: "Show help" },
+			];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args: string, ctx: ExtensionContext) => {
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const command = tokens[0]?.startsWith("--") ? "review" : tokens[0] || "review";

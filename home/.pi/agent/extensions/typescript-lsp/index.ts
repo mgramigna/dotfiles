@@ -155,29 +155,42 @@ export default function (pi: ExtensionAPI) {
 		scheduleDiagnostics(ctx, input.path);
 	});
 
-	pi.registerCommand("typescript-lsp-doctor", {
-		description: "Check the TypeScript native LSP diagnostics extension and language-server health",
-		handler: async (_args, ctx) => {
-			const report = await doctor(ctx);
-			ctx.ui.notify(report, report.includes("unavailable") || report.includes("degraded") ? "warning" : "info");
-		},
-	});
+	const runTypescriptLspDoctor = async (ctx: any) => {
+		const report = await doctor(ctx);
+		ctx.ui.notify(report, report.includes("unavailable") || report.includes("degraded") ? "warning" : "info");
+	};
 
-	pi.registerCommand("typescript-lsp-refresh", {
-		description: "Refresh TypeScript native LSP diagnostics; pass paths or --hard to restart first",
+	const runTypescriptLspRefresh = async (args: string, ctx: any) => {
+		const { hard, paths } = parseRefreshArgs(args, ctx.cwd);
+		const text = await refreshDiagnostics(ctx, paths, hard);
+		ctx.ui.notify(text, text.includes("failed") ? "warning" : "info");
+	};
+
+	const sendTypescriptLspDiagnostics = (ctx: any) => {
+		pi.sendMessage({ customType: "typescript-lsp-diagnostics", content: currentDiagnosticsText(), display: true }, { triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" });
+	};
+
+	pi.registerCommand("typescript-lsp", {
+		description: "TypeScript LSP commands: diagnostics, refresh [--hard] [paths...], doctor",
+		getArgumentCompletions(prefix) {
+			const items = [
+				{ value: "diagnostics", label: "diagnostics", description: "Inject current diagnostics into the conversation" },
+				{ value: "refresh", label: "refresh", description: "Refresh diagnostics" },
+				{ value: "refresh --hard", label: "refresh --hard", description: "Restart LSP and refresh diagnostics" },
+				{ value: "doctor", label: "doctor", description: "Check extension and language-server health" },
+			];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
-			const { hard, paths } = parseRefreshArgs(args, ctx.cwd);
-			const text = await refreshDiagnostics(ctx, paths, hard);
-			ctx.ui.notify(text, text.includes("failed") ? "warning" : "info");
+			const [command, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+			if (!command || command === "diagnostics") return sendTypescriptLspDiagnostics(ctx);
+			if (command === "refresh") return runTypescriptLspRefresh(rest.join(" "), ctx);
+			if (command === "doctor") return runTypescriptLspDoctor(ctx);
+			ctx.ui.notify("Usage: /typescript-lsp diagnostics | /typescript-lsp refresh [--hard] [paths...] | /typescript-lsp doctor", "warning");
 		},
 	});
 
-	pi.registerCommand("typescript-lsp-diagnostics", {
-		description: "Inject current TypeScript native LSP error diagnostics into the conversation",
-		handler: async (_args, ctx) => {
-			pi.sendMessage({ customType: "typescript-lsp-diagnostics", content: currentDiagnosticsText(), display: true }, { triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" });
-		},
-	});
 
 	pi.registerTool({
 		name: "typescript_lsp_diagnostics",

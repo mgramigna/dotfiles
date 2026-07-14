@@ -9,6 +9,7 @@ import {
 	type ExtensionContext,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { autocompleteSelect } from "./autocomplete-select";
 
@@ -134,6 +135,10 @@ function phaseLabel(phase: TrioPhase): string {
 	return phase;
 }
 
+function formatKickoffMessage(task: string): string {
+	return `Trio workflow started\n\nTask:\n${task}`;
+}
+
 function uniqueAvailable(names: string[], availableTools: Set<string>): string[] {
 	return [...new Set(names)].filter((name) => availableTools.has(name));
 }
@@ -197,6 +202,17 @@ function readLatestWorkflowState(entries: Array<{ type?: string; customType?: st
 }
 
 export default function trioExtension(pi: ExtensionAPI): void {
+	pi.registerMessageRenderer("trio-kickoff", (message, _options, theme) => {
+		const content = typeof message.content === "string" ? message.content : String(message.content ?? "");
+		const [title = "Trio workflow started", ...rest] = content.split("\n");
+		const body = rest.join("\n").trim();
+		const header = `${theme.fg("accent", "◆")} ${theme.fg("dim", title)}`;
+		const text = body ? `${header}\n${theme.fg("dim", body)}` : header;
+		const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
+		box.addChild(new Text(text, 0, 0));
+		return box;
+	});
+
 	let config: TrioConfig | undefined;
 	let configPaths: string[] = [];
 	let state: TrioWorkflowState | undefined;
@@ -406,7 +422,15 @@ export default function trioExtension(pi: ExtensionAPI): void {
 			pi.setActiveTools(original.tools);
 			throw error;
 		}
-		pi.sendUserMessage(`[TRIO WORKFLOW REQUEST]\n${task}`);
+		await pi.sendMessage(
+			{
+				customType: "trio-kickoff",
+				content: formatKickoffMessage(task),
+				display: true,
+				details: { phase: "planning", task },
+			},
+			{ triggerTurn: true, deliverAs: "followUp" },
+		);
 		await ctx.waitForIdle();
 	}
 

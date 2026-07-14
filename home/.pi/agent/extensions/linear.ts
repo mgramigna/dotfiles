@@ -242,28 +242,41 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	const checkLinearSetup = (ctx: any) => {
+		try {
+			apiKey();
+			ctx.ui.notify("Linear extension ready", "info");
+		} catch (error) {
+			ctx.ui.notify(error instanceof Error ? error.message : "Linear extension is not configured", "warning");
+		}
+	};
+
+	const linearLogin = async (ctx: any) => {
+		const key = (await ctx.ui.input("Linear API key:", "lin_api_..."))?.trim();
+		if (!key) {
+			ctx.ui.notify("Linear API key was not saved", "warning");
+			return;
+		}
+		writeGlobalApiKey(key);
+		ctx.ui.notify(`Saved Linear API key to ${globalConfigPath}`, "info");
+	};
+
 	pi.registerCommand("linear", {
-		description: "Check Linear extension setup",
-		handler: async (_args, ctx) => {
-			try {
-				apiKey();
-				ctx.ui.notify("Linear extension ready", "info");
-			} catch (error) {
-				ctx.ui.notify(error instanceof Error ? error.message : "Linear extension is not configured", "warning");
-			}
+		description: "Linear commands: status, login",
+		getArgumentCompletions(prefix) {
+			const items = [
+				{ value: "status", label: "status", description: "Check Linear extension setup" },
+				{ value: "login", label: "login", description: "Save a Linear API key" },
+			];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
+		handler: async (args, ctx) => {
+			const command = args.trim() || "status";
+			if (command === "status") return checkLinearSetup(ctx);
+			if (command === "login") return linearLogin(ctx);
+			ctx.ui.notify("Usage: /linear status | /linear login", "warning");
 		},
 	});
 
-	pi.registerCommand("linear-login", {
-		description: "Save a Linear API key to ~/.pi/agent/linear.json",
-		handler: async (_args, ctx) => {
-			const key = (await ctx.ui.input("Linear API key:", "lin_api_..."))?.trim();
-			if (!key) {
-				ctx.ui.notify("Linear API key was not saved", "warning");
-				return;
-			}
-			writeGlobalApiKey(key);
-			ctx.ui.notify(`Saved Linear API key to ${globalConfigPath}`, "info");
-		},
-	});
 }

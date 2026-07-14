@@ -312,7 +312,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("references", {
-		description: "List, add, remove, sync, or show help for reference repositories",
+		description: "List, add, remove, sync, ensure, or show help for reference repositories",
+		getArgumentCompletions(prefix) {
+			const items = [
+				{ value: "list", label: "list", description: "List configured references" },
+				{ value: "sync", label: "sync", description: "Sync all or one reference repository" },
+				{ value: "add ", label: "add", description: "Add a user reference: add <name> <git-url> <description>" },
+				{ value: "remove ", label: "remove", description: "Remove a user reference" },
+				{ value: "ensure ", label: "ensure", description: "Ensure an npm package or git URL is configured" },
+				{ value: "help", label: "help", description: "Show help" },
+			];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
 			const [action, ...rest] = args.trim().split(/\s+/).filter(Boolean);
 			if (action === "help" || action === "--help" || action === "-h") {

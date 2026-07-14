@@ -273,49 +273,18 @@ export default function advisor(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("advisor", {
-		description: "Ask the configured advisor model directly: /advisor <question>",
-		handler: async (args, ctx) => {
-			const question = args.trim();
-			if (!question) {
-				ctx.ui.notify("Usage: /advisor <question>", "warning");
-				return;
-			}
-			setAdvisorStatus(ctx, "asking advisor...");
-			try {
-				const result = await runAdvisor(ctx, question, undefined, true);
-				pi.sendMessage(
-					{
-						customType: "advisor-result",
-						content: result.output || "(advisor returned no output)",
-						display: true,
-						details: { model: result.model, promptPath: result.promptPath },
-					},
-					{ triggerTurn: false },
-				);
-			} finally {
-				setAdvisorStatus(ctx, undefined);
-			}
-		},
-	});
+	const showAdvisorConfig = async (ctx: ExtensionContext) => {
+		const config = await loadAdvisorConfig(ctx);
+		const message = [
+			`Global: ${getGlobalConfigPath()}`,
+			`Project: ${getProjectConfigPath(ctx.cwd)}${isProjectTrusted(ctx) ? "" : " (ignored; project not trusted)"}`,
+			"",
+			JSON.stringify(config, null, 2),
+		].join("\n");
+		ctx.ui.notify(message, "info");
+	};
 
-	pi.registerCommand("advisor-config", {
-		description: "Show advisor config locations and resolved config",
-		handler: async (_args, ctx) => {
-			const config = await loadAdvisorConfig(ctx);
-			const message = [
-				`Global: ${getGlobalConfigPath()}`,
-				`Project: ${getProjectConfigPath(ctx.cwd)}${isProjectTrusted(ctx) ? "" : " (ignored; project not trusted)"}`,
-				"",
-				JSON.stringify(config, null, 2),
-			].join("\n");
-			ctx.ui.notify(message, "info");
-		},
-	});
-
-	pi.registerCommand("advisor-setup", {
-		description: "Interactively create or update advisor config; pass --project for project config",
-		handler: async (args, ctx) => {
+	const runAdvisorSetup = async (args: string, ctx: ExtensionContext) => {
 			const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
 			const project = args.split(/\s+/).includes("--project");
 			const path = project ? getProjectConfigPath(ctx.cwd) : getGlobalConfigPath();
@@ -376,6 +345,54 @@ export default function advisor(pi: ExtensionAPI) {
 			await mkdir(dirname(path), { recursive: true });
 			await writeFile(path, JSON.stringify(nextConfig, null, 2) + "\n", "utf8");
 			ctx.ui.notify(`${existingConfig ? "Updated" : "Created"} advisor config: ${path}`, "info");
+		};
+
+	const askAdvisorDirectly = async (question: string, ctx: ExtensionContext) => {
+		setAdvisorStatus(ctx, "asking advisor...");
+		try {
+			const result = await runAdvisor(ctx, question, undefined, true);
+			pi.sendMessage(
+				{
+					customType: "advisor-result",
+					content: result.output || "(advisor returned no output)",
+					display: true,
+					details: { model: result.model, promptPath: result.promptPath },
+				},
+				{ triggerTurn: false },
+			);
+		} finally {
+			setAdvisorStatus(ctx, undefined);
+		}
+	};
+
+	pi.registerCommand("advisor", {
+		description: "Advisor commands: ask <question>, setup [--project], config",
+		getArgumentCompletions(prefix) {
+			const items = [
+				{ value: "ask ", label: "ask", description: "Ask the configured advisor model directly" },
+				{ value: "setup", label: "setup", description: "Interactively create or update advisor config" },
+				{ value: "setup --project", label: "setup --project", description: "Create or update project advisor config" },
+				{ value: "config", label: "config", description: "Show resolved advisor config" },
+			];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
+		handler: async (args, ctx) => {
+			const input = args.trim();
+			const [command, ...rest] = input.split(/\s+/);
+			if (!input) {
+				ctx.ui.notify("Usage: /advisor ask <question> | /advisor setup [--project] | /advisor config", "warning");
+				return;
+			}
+			if (command === "config") return showAdvisorConfig(ctx);
+			if (command === "setup") return runAdvisorSetup(rest.join(" "), ctx);
+			const question = command === "ask" ? rest.join(" ").trim() : input;
+			if (!question) {
+				ctx.ui.notify("Usage: /advisor ask <question>", "warning");
+				return;
+			}
+			await askAdvisorDirectly(question, ctx);
 		},
 	});
+
 }

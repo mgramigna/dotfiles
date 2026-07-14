@@ -60,41 +60,53 @@ export default function (pi: {
     name: string,
     command: {
       description: string;
+      getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string; description?: string }> | null;
       handler: (args: string, ctx: CommandContext) => Promise<void>;
     },
   ) => void;
 }) {
+  const runOrchestrateCommand = async (args: string, ctx: CommandContext) => {
+    const parsed = parseArgs(args);
+    const parentIssueNumber = parseIssueNumber(parsed.issue);
+
+    if (!parentIssueNumber) {
+      ctx.ui.notify("Usage: /orchestrate <issue-url|issue-number> [--headed] [--stack|--no-pr]", "info");
+      return;
+    }
+
+    const runId = `prd-${parentIssueNumber}`;
+    const progress = createProgress(ctx.ui, runId);
+
+    try {
+      const trusted = ctx.isProjectTrusted?.() ?? true;
+      const result = await runOrchestratorHeadless({
+        cwd: ctx.cwd,
+        parentIssueNumber,
+        trusted,
+        mode: parsed.mode,
+        onProgress: progress.update,
+        resetMainWorktree: false,
+        freshRun: false,
+        publishMode: parsed.publishMode,
+      });
+      ctx.ui.notify(result, "info");
+    } finally {
+      progress.clear();
+    }
+  };
+
   pi.registerCommand("orchestrate", {
     description: "Run PRD orchestration from a GitHub issue URL/number",
-    handler: async (args, ctx) => {
-      const parsed = parseArgs(args);
-      const parentIssueNumber = parseIssueNumber(parsed.issue);
-
-      if (!parentIssueNumber) {
-        ctx.ui.notify("Usage: /orchestrate <issue-url|issue-number> [--headed] [--stack|--no-pr]", "info");
-        return;
-      }
-
-      const runId = `prd-${parentIssueNumber}`;
-      const progress = createProgress(ctx.ui, runId);
-
-      try {
-        const trusted = ctx.isProjectTrusted?.() ?? true;
-        const result = await runOrchestratorHeadless({
-          cwd: ctx.cwd,
-          parentIssueNumber,
-          trusted,
-          mode: parsed.mode,
-          onProgress: progress.update,
-          resetMainWorktree: false,
-          freshRun: false,
-          publishMode: parsed.publishMode,
-        });
-        ctx.ui.notify(result, "info");
-      } finally {
-        progress.clear();
-      }
+    getArgumentCompletions(prefix) {
+      const items = [
+        { value: "--headed", label: "--headed", description: "Run workers in headed mode" },
+        { value: "--stack", label: "--stack", description: "Publish using stacked PRs" },
+        { value: "--no-pr", label: "--no-pr", description: "Do not publish PRs" },
+      ];
+      const filtered = items.filter((item) => item.value.startsWith(prefix));
+      return filtered.length > 0 ? filtered : null;
     },
+    handler: runOrchestrateCommand,
   });
 
   pi.registerCommand("orchestrate-doctor", {
@@ -122,6 +134,11 @@ export default function (pi: {
 
   pi.registerCommand("orchestrator", {
     description: "Orchestrator commands: setup",
+    getArgumentCompletions(prefix) {
+      const items = [{ value: "setup", label: "setup", description: "Create .pi/orchestrator.json interactively" }];
+      const filtered = items.filter((item) => item.value.startsWith(prefix));
+      return filtered.length > 0 ? filtered : null;
+    },
     handler: setupCommand,
   });
 
