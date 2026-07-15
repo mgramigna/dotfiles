@@ -13,6 +13,7 @@ const execFileAsync = promisify(execFile);
 const RUN_DIR = join(getAgentDir(), "overseer");
 const CUSTOM_REVIEW_COMPLETE = "overseer-review-complete";
 const REVIEW_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
+const COMPACT_REVIEW_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 const EMPTY_DIFF_MESSAGE = "There is nothing for overseer to review in the selected git diff. Make a change first, then run /overseer review again.";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 type OverseerThinkingLevel = (typeof THINKING_LEVELS)[number];
@@ -24,9 +25,15 @@ type OverseerConfig = {
 
 const defaultOverseerConfig: OverseerConfig = {};
 
-const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only code review agent running beside a coding agent in a herdr pane.
+const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only adversarial code review agent running beside a coding agent in a herdr pane.
 
 Your job is to look over the shoulder of the implementation agent and produce defensible, evidence-backed review findings. Do not edit files.
+
+Adversarial stance:
+- Assume the changed code is wrong until the code, tests, types, framework behavior, or explicit invariants prove it correct.
+- Treat happy-path reasoning as insufficient; actively look for edge cases, missing guards, invalid states, races, rollback gaps, and unsafe assumptions.
+- Challenge names, comments, and apparent intent. Trust only executable behavior and verified constraints.
+- Try to construct realistic failure scenarios from the supplied diff, then inspect the repository to prove or disprove them.
 
 Review standard:
 - Only report issues introduced or made relevant by the supplied diff.
@@ -77,8 +84,8 @@ async function execJson(command: string, args: string[], cwd?: string): Promise<
 	return JSON.parse(stdout);
 }
 
-async function execText(command: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
-	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 20 * 1024 * 1024, timeout });
+async function execText(command: string, args: string[], cwd?: string, timeout = 30_000, signal?: AbortSignal): Promise<string> {
+	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 20 * 1024 * 1024, timeout, signal });
 	return stdout.trimEnd();
 }
 
@@ -287,6 +294,7 @@ function reviewDiffModeFromFlags(flags: Set<string>): ReviewDiffMode {
 }
 
 type ReviewStatus = "passed" | "has_questions" | "needs_resolution";
+type ReviewDecision = "approve" | "request_changes" | "non_blocking_comments";
 
 function confidenceCounts(text: string) {
 	return {
@@ -308,35 +316,88 @@ function friendlyReviewStatus(status: ReviewStatus): string {
 	return "passed";
 }
 
+function decisionFromCounts(counts: ReturnType<typeof confidenceCounts>): ReviewDecision {
+	if (counts.verified > 0) return "request_changes";
+	if (counts.hunch > 0 || counts.question > 0) return "non_blocking_comments";
+	return "approve";
+}
+
+function summaryFromDecision(decision: ReviewDecision, counts: ReturnType<typeof confidenceCounts>): string {
+	if (decision === "approve") return "No defensible issues found.";
+	const parts = [
+		counts.verified ? `${counts.verified} VERIFIED` : undefined,
+		counts.hunch ? `${counts.hunch} HUNCH` : undefined,
+		counts.question ? `${counts.question} QUESTION` : undefined,
+	].filter((part): part is string => Boolean(part));
+	return `Overseer found ${parts.join(", ")} finding${counts.verified + counts.hunch + counts.question === 1 ? "" : "s"}. Full review is available in the artifact.`;
+}
+
 function reviewNotifyLevel(status: ReviewStatus): "info" | "warning" {
 	return status === "passed" ? "info" : "warning";
 }
 
-async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewDiff?: ReviewDiff) {
+async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewDiff?: ReviewDiff, timeoutMs = REVIEW_WAIT_TIMEOUT_MS, signal?: AbortSignal) {
 	const selectedDiff = reviewDiff ?? (await currentReviewDiff(ctx.cwd));
 	if (!hasReviewableDiff(selectedDiff)) return { skipped: true as const, message: EMPTY_DIFF_MESSAGE };
 	await mkdir(RUN_DIR, { recursive: true });
 	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
+	const path = artifactPath || join(RUN_DIR, `artifact-${timestamp()}.json`);
+	await mkdir(dirname(path), { recursive: true });
 	await writeFile(promptPath, await reviewPromptBody(ctx, selectedDiff), "utf8");
+	const startedAt = new Date().toISOString();
+	const startedArtifact = {
+		version: 1,
+		cwd: ctx.cwd,
+		diffMode: selectedDiff.mode,
+		promptPath,
+		createdAt: startedAt,
+		status: "running",
+		summary: `Overseer review is still running. Started at ${startedAt}.`,
+	};
+	await writeFile(path, JSON.stringify(startedArtifact, null, 2) + "\n", "utf8");
 	const config = await loadOverseerConfig(ctx);
 	const args = ["-p", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files"];
 	args.push(...piConfigArgs(ctx, config));
 	args.push("--name", "overseer review", "--system-prompt", REVIEW_SYSTEM_PROMPT, `@${promptPath}`);
-	const output = await execText("pi", args, ctx.cwd, REVIEW_WAIT_TIMEOUT_MS);
+	let output: string;
+	try {
+		output = await execText("pi", args, ctx.cwd, timeoutMs, signal);
+	} catch (error) {
+		const execError = error as Error & { code?: string | number; killed?: boolean; signal?: string; stdout?: string; stderr?: string };
+		const timedOut = execError.killed || execError.signal === "SIGTERM" || execError.code === "ETIMEDOUT";
+		const message = timedOut
+			? `Overseer review timed out after ${Math.round(timeoutMs / 1000)}s.`
+			: `Overseer review failed: ${execError.message}`;
+		const failedArtifact = {
+			...startedArtifact,
+			status: timedOut ? "timed_out" : "failed",
+			summary: message,
+			completedAt: new Date().toISOString(),
+			error: execError.message,
+			stderr: execError.stderr,
+			stdout: execError.stdout,
+		};
+		await writeFile(path, JSON.stringify(failedArtifact, null, 2) + "\n", "utf8");
+		throw new Error(`${message} Artifact: ${path}${execError.stderr ? `\n\n${execError.stderr.trim()}` : ""}`);
+	}
 	const findings = extractReviewFindings(output);
 	const counts = confidenceCounts(findings);
+	const status = reviewStatusFromCounts(counts);
+	const decision = decisionFromCounts(counts);
 	const artifact = {
 		version: 1,
 		cwd: ctx.cwd,
 		diffMode: selectedDiff.mode,
 		promptPath,
-		createdAt: new Date().toISOString(),
-		status: reviewStatusFromCounts(counts),
+		createdAt: startedAt,
+		completedAt: new Date().toISOString(),
+		status,
+		decision,
+		summary: summaryFromDecision(decision, counts),
 		counts,
 		findings,
 		output,
 	};
-	const path = artifactPath || join(RUN_DIR, `artifact-${timestamp()}.json`);
 	await writeFile(path, JSON.stringify(artifact, null, 2) + "\n", "utf8");
 	return { skipped: false as const, path, artifact };
 }
@@ -634,8 +695,8 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			artifactPath: Type.Optional(Type.String({ description: "Path to write review artifact JSON. Defaults under ~/.pi/agent/overseer." })),
 		}),
-		async execute(_toolCallId: string, params: { artifactPath?: string }, _signal: any, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
-			const result = await runHeadlessReview(ctx, params.artifactPath);
+		async execute(_toolCallId: string, params: { artifactPath?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+			const result = await runHeadlessReview(ctx, params.artifactPath, undefined, REVIEW_WAIT_TIMEOUT_MS, signal);
 			if (result.skipped) {
 				return {
 					content: [{ type: "text", text: result.message }],
@@ -647,6 +708,84 @@ export default function (pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text", text: `Overseer review ${friendlyReviewStatus(artifact.status)}. Artifact: ${path}\n\n${summary}` }],
 				details: { path, status: artifact.status, counts: artifact.counts, findings: artifact.findings },
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "overseer_request_review",
+		label: "Request overseer review",
+		description: "Ask overseer for a compact approve/request_changes/non_blocking_comments review decision without returning full findings.",
+		parameters: Type.Object({
+			diffMode: Type.Optional(Type.Union([
+				Type.Literal("unstaged"),
+				Type.Literal("staged"),
+				Type.Literal("all"),
+			], { description: "Diff scope to review. Defaults to unstaged." })),
+			artifactPath: Type.Optional(Type.String({ description: "Path to write review artifact JSON. Defaults under ~/.pi/agent/overseer." })),
+		}),
+		async execute(_toolCallId: string, params: { diffMode?: ReviewDiffMode; artifactPath?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+			const reviewDiff = await currentReviewDiff(ctx.cwd, params.diffMode ?? "unstaged");
+			const result = await runHeadlessReview(ctx, params.artifactPath, reviewDiff, COMPACT_REVIEW_WAIT_TIMEOUT_MS, signal);
+			if (result.skipped) {
+				return {
+					content: [{ type: "text", text: result.message }],
+					details: { status: "skipped", reason: "empty_current_git_diff" },
+				};
+			}
+			const { path, artifact } = result;
+			return {
+				content: [{ type: "text", text: `Overseer decision: ${artifact.decision}\nArtifact: ${path}\nSummary: ${artifact.summary}` }],
+				details: {
+					artifactPath: path,
+					decision: artifact.decision,
+					status: artifact.status,
+					counts: artifact.counts,
+					summary: artifact.summary,
+				},
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "overseer_read_review",
+		label: "Read overseer review",
+		description: "Read a persisted overseer review artifact, defaulting to compact summary details.",
+		parameters: Type.Object({
+			artifactPath: Type.String({ description: "Path to an overseer artifact JSON file." }),
+			detailLevel: Type.Optional(Type.Union([
+				Type.Literal("summary"),
+				Type.Literal("findings"),
+				Type.Literal("raw"),
+			], { description: "Amount of review detail to return. Defaults to summary." })),
+		}),
+		async execute(_toolCallId: string, params: { artifactPath: string; detailLevel?: "summary" | "findings" | "raw" }): Promise<AgentToolResult<unknown>> {
+			const raw = await readFile(params.artifactPath, "utf8");
+			const artifact = JSON.parse(raw) as {
+				decision?: ReviewDecision;
+				status?: ReviewStatus;
+				counts?: ReturnType<typeof confidenceCounts>;
+				summary?: string;
+				findings?: string;
+				output?: string;
+			};
+			const detailLevel = params.detailLevel ?? "summary";
+			const summary = artifact.summary ?? "No summary was recorded in this overseer artifact.";
+			const header = `Overseer decision: ${artifact.decision ?? "unknown"}\nStatus: ${artifact.status ?? "unknown"}\nSummary: ${summary}`;
+			const body = detailLevel === "raw"
+				? artifact.output || "No raw output was recorded in this overseer artifact."
+				: detailLevel === "findings"
+					? artifact.findings || "I found no defensible issues."
+					: "";
+			return {
+				content: [{ type: "text", text: body ? `${header}\n\n${body}` : header }],
+				details: {
+					artifactPath: params.artifactPath,
+					decision: artifact.decision,
+					status: artifact.status,
+					counts: artifact.counts,
+					summary,
+				},
 			};
 		},
 	});
