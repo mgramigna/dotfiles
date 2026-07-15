@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -11,10 +11,10 @@ import { autocompleteSelect } from "./autocomplete-select";
 const execFileAsync = promisify(execFile);
 
 const RUN_DIR = join(getAgentDir(), "overseer");
-const CUSTOM_REVIEW_COMPLETE = "overseer-review-complete";
 const REVIEW_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const COMPACT_REVIEW_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 const EMPTY_DIFF_MESSAGE = "There is nothing for overseer to review in the selected git diff. Make a change first, then run /overseer review again.";
+const EMPTY_PR_DIFF_MESSAGE = "There is nothing for overseer to review in the selected pull request diff.";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 type OverseerThinkingLevel = (typeof THINKING_LEVELS)[number];
 
@@ -25,7 +25,7 @@ type OverseerConfig = {
 
 const defaultOverseerConfig: OverseerConfig = {};
 
-const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only adversarial code review agent running beside a coding agent in a herdr pane.
+const REVIEW_SYSTEM_PROMPT = `You are overseer, a read-only adversarial code review agent running as a headless subprocess.
 
 Your job is to look over the shoulder of the implementation agent and produce defensible, evidence-backed review findings. Do not edit files.
 
@@ -55,42 +55,74 @@ Required format for each issue:
 If there are no defensible issues, say exactly: "I found no defensible issues."`;
 
 const HELP = `Overseer commands:
-- /overseer review            Run a headless sub-agent review of unstaged changes (git diff).
-- /overseer review --staged   Review staged changes (git diff --cached). Alias: --cached.
-- /overseer review --all      Review unstaged plus staged changes (git diff HEAD).
-- /overseer review --pane / --headed
-                           Spawn a right-side herdr pane running a fresh pi review session. Requires running inside herdr.
-                           Combine with --staged/--cached or --all to choose the diff scope.
-- /overseer pane              Show the last recorded overseer pane id.
-- /overseer read [n]          Read recent output from the overseer pane.
+- /overseer review            Ask the agent to run the overseer_review tool for all local changes: staged, unstaged, and untracked files.
+- /overseer review --pr <url|number>
+                           Ask the agent to run the overseer_review tool for a GitHub pull request diff fetched with gh.
+- /overseer status            Show the latest overseer run status, artifact path, log path, and tail command.
 - /overseer doctor            Check overseer setup and config.
 - /overseer setup             Interactively create an overseer config if one does not exist.
 - /overseer help              Show this help.
 
-By default, overseer runs headlessly as a sub-agent and returns a structured artifact for the main agent to inspect and act on. Use --pane / --headed when you explicitly want a visible herdr pane.`;
+By default, overseer runs headlessly as a sub-agent and returns a structured artifact for the main agent to inspect and act on.`;
 
 interface OverseerState {
-	paneId?: string;
-	promptPath?: string;
-	startedAt?: number;
-	monitorToken?: number;
 	firstRunGuidanceShown?: boolean;
 }
 
 const state: OverseerState = {};
-
-async function execJson(command: string, args: string[], cwd?: string): Promise<any> {
-	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 2 * 1024 * 1024, timeout: 10_000 });
-	return JSON.parse(stdout);
-}
 
 async function execText(command: string, args: string[], cwd?: string, timeout = 30_000, signal?: AbortSignal): Promise<string> {
 	const { stdout } = await execFileAsync(command, args, { cwd, maxBuffer: 20 * 1024 * 1024, timeout, signal });
 	return stdout.trimEnd();
 }
 
-function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
+async function execTextStreaming(command: string, args: string[], options: { cwd?: string; timeout: number; signal?: AbortSignal; logPath: string }): Promise<{ stdout: string; stderr: string }> {
+	await appendFile(options.logPath, `$ ${[command, ...args].join(" ")}\n\n`);
+	return new Promise((resolve, reject) => {
+		const child = spawn(command, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"] });
+		const stdoutChunks: Buffer[] = [];
+		const stderrChunks: Buffer[] = [];
+		let settled = false;
+		let timedOut = false;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGTERM");
+		}, options.timeout);
+		const abort = () => child.kill("SIGTERM");
+		options.signal?.addEventListener("abort", abort, { once: true });
+
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdoutChunks.push(chunk);
+			void appendFile(options.logPath, chunk);
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderrChunks.push(chunk);
+			void appendFile(options.logPath, chunk);
+		});
+		child.on("error", (error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			options.signal?.removeEventListener("abort", abort);
+			reject(error);
+		});
+		child.on("close", (code, childSignal) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			options.signal?.removeEventListener("abort", abort);
+			const stdout = Buffer.concat(stdoutChunks).toString("utf8").trimEnd();
+			const stderr = Buffer.concat(stderrChunks).toString("utf8").trimEnd();
+			if (code === 0) return resolve({ stdout, stderr });
+			const error = new Error(timedOut ? `Command timed out after ${Math.round(options.timeout / 1000)}s` : `Command failed with exit code ${code ?? `signal ${childSignal}`}`) as Error & { code?: string | number; killed?: boolean; signal?: string | null; stdout?: string; stderr?: string };
+			error.code = timedOut ? "ETIMEDOUT" : code ?? undefined;
+			error.killed = timedOut;
+			error.signal = childSignal;
+			error.stdout = stdout;
+			error.stderr = stderr;
+			reject(error);
+		});
+	});
 }
 
 function getConfigPath(cwd: string): string {
@@ -185,26 +217,6 @@ function piConfigArgs(ctx: ExtensionContext, config: OverseerConfig): string[] {
 	return args;
 }
 
-function piConfigFlags(ctx: ExtensionContext, config: OverseerConfig): string {
-	return piConfigArgs(ctx, config).map(shellQuote).join(" ");
-}
-
-async function currentPaneId(cwd: string): Promise<string | undefined> {
-	if (process.env.HERDR_ENV !== "1") return undefined;
-	if (process.env.HERDR_PANE_ID) return process.env.HERDR_PANE_ID;
-	const payload = await execJson("herdr", ["pane", "list"], cwd);
-	return payload?.result?.panes?.find((pane: any) => pane.focused)?.pane_id;
-}
-
-async function splitRight(cwd: string): Promise<string> {
-	const current = await currentPaneId(cwd);
-	if (!current) throw new Error("Visible overseer pane reviews require running pi inside herdr with a focused pane. Start pi from herdr, or omit --pane/--headed to run a headless review.");
-	const split = await execJson("herdr", ["pane", "split", current, "--direction", "right", "--no-focus"], cwd);
-	const paneId = split?.result?.pane?.pane_id;
-	if (typeof paneId !== "string") throw new Error("herdr did not return a new pane id.");
-	return paneId;
-}
-
 async function git(cwd: string, args: string[]): Promise<string> {
 	return execText("git", args, cwd);
 }
@@ -217,46 +229,80 @@ async function gitOrEmpty(cwd: string, args: string[]): Promise<string> {
 	}
 }
 
-type ReviewDiffMode = "unstaged" | "staged" | "all";
-
 type ReviewDiff = {
-	mode: ReviewDiffMode;
+	kind: "diff";
 	changed: string;
 	stat: string;
 	diff: string;
 };
 
-function gitDiffArgs(mode: ReviewDiffMode, extraArgs: string[] = []): string[] {
-	const scopeArgs = mode === "staged" ? ["--cached"] : mode === "all" ? ["HEAD"] : [];
-	return ["diff", ...scopeArgs, ...extraArgs];
+type ReviewPullRequest = {
+	kind: "pull_request";
+	ref: string;
+	url?: string;
+	title?: string;
+	baseRefName?: string;
+	headRefName?: string;
+	changed: string;
+	stat: string;
+	diff: string;
+};
+
+type ReviewSubject = ReviewDiff | ReviewPullRequest;
+
+async function execTextAllowExit(command: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
+	try {
+		return await execText(command, args, cwd, timeout);
+	} catch (error) {
+		const execError = error as Error & { stdout?: string };
+		return execError.stdout?.trimEnd() ?? "";
+	}
 }
 
-async function currentReviewDiff(cwd: string, mode: ReviewDiffMode = "unstaged"): Promise<ReviewDiff> {
-	const [changed, stat, diff] = await Promise.all([
-		gitOrEmpty(cwd, gitDiffArgs(mode, ["--name-only"])),
-		gitOrEmpty(cwd, gitDiffArgs(mode, ["--stat"])),
-		gitOrEmpty(cwd, gitDiffArgs(mode, ["--no-ext-diff"])),
+async function untrackedFiles(cwd: string): Promise<string[]> {
+	const output = await gitOrEmpty(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
+	return output.split("\0").filter(Boolean);
+}
+
+async function untrackedFileDiff(cwd: string, file: string): Promise<string> {
+	return execTextAllowExit("git", ["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", file], cwd);
+}
+
+async function currentReviewDiff(cwd: string): Promise<ReviewDiff> {
+	const [trackedChanged, trackedStat, trackedDiff, untracked] = await Promise.all([
+		gitOrEmpty(cwd, ["diff", "HEAD", "--name-only"]),
+		gitOrEmpty(cwd, ["diff", "HEAD", "--stat"]),
+		gitOrEmpty(cwd, ["diff", "HEAD", "--no-ext-diff"]),
+		untrackedFiles(cwd),
 	]);
-	return { mode, changed, stat, diff };
+	const untrackedDiffs = await Promise.all(untracked.map((file) => untrackedFileDiff(cwd, file)));
+	const changed = [...trackedChanged.split("\n").filter(Boolean), ...untracked].join("\n");
+	const untrackedStat = untracked.length ? `Untracked files:\n${untracked.map((file) => ` ${file}`).join("\n")}` : "";
+	const stat = [trackedStat, untrackedStat].filter(Boolean).join("\n\n");
+	const diff = [trackedDiff, ...untrackedDiffs].filter(Boolean).join("\n\n");
+	return { kind: "diff", changed, stat, diff };
 }
 
-function hasReviewableDiff(reviewDiff: ReviewDiff): boolean {
-	return reviewDiff.diff.trim().length > 0;
+function hasReviewableDiff(reviewSubject: ReviewSubject): boolean {
+	return reviewSubject.diff.trim().length > 0;
 }
 
 function timestamp(): string {
 	return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-async function reviewPromptBody(ctx: ExtensionContext, reviewDiff?: ReviewDiff): Promise<string> {
-	const { changed, stat, diff } = reviewDiff ?? (await currentReviewDiff(ctx.cwd));
+async function reviewPromptBody(ctx: ExtensionContext, reviewSubject?: ReviewSubject): Promise<string> {
+	const subject = reviewSubject ?? (await currentReviewDiff(ctx.cwd));
+	const { changed, stat, diff } = subject;
 	return [
 		"# Overseer review request",
 		"",
 		`Working directory: ${ctx.cwd}`,
-		`Diff scope: ${changedDiffScopeLabel(reviewDiff?.mode ?? "unstaged")}`,
+		reviewSubjectLabel(subject),
 		"",
-		"Review the selected uncommitted diff below. You may inspect repository files to verify or falsify findings, but do not edit anything.",
+		subject.kind === "pull_request"
+			? "Review the GitHub pull request diff below. You may inspect repository files to verify or falsify findings, but do not edit anything."
+			: "Review the selected uncommitted diff below. You may inspect repository files to verify or falsify findings, but do not edit anything.",
 		"",
 		"## Changed files",
 		changed.trim() ? changed.split("\n").map((file) => `- ${file}`).join("\n") : "No changed files were reported by git diff --name-only.",
@@ -274,34 +320,29 @@ async function reviewPromptBody(ctx: ExtensionContext, reviewDiff?: ReviewDiff):
 	].join("\n");
 }
 
-async function writeReviewPrompt(ctx: ExtensionContext, reviewDiff?: ReviewDiff): Promise<string> {
-	await mkdir(RUN_DIR, { recursive: true });
-	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
-	await writeFile(promptPath, await reviewPromptBody(ctx, reviewDiff), "utf8");
-	return promptPath;
-}
-
-function changedDiffScopeLabel(mode: ReviewDiffMode): string {
-	if (mode === "staged") return "staged changes (git diff --cached)";
-	if (mode === "all") return "unstaged plus staged changes (git diff HEAD)";
-	return "unstaged changes (git diff)";
-}
-
-function reviewDiffModeFromFlags(flags: Set<string>): ReviewDiffMode {
-	if (flags.has("--all")) return "all";
-	if (flags.has("--staged") || flags.has("--cached")) return "staged";
-	return "unstaged";
+function reviewSubjectLabel(subject: ReviewSubject): string {
+	if (subject.kind === "pull_request") {
+		const title = subject.title ? ` (${subject.title})` : "";
+		const refs = subject.baseRefName && subject.headRefName ? ` ${subject.baseRefName}...${subject.headRefName}` : "";
+		return `Pull request: ${subject.url ?? subject.ref}${title}${refs}`;
+	}
+	return "Diff scope: all local changes (tracked staged, tracked unstaged, and untracked files)";
 }
 
 type ReviewStatus = "passed" | "has_questions" | "needs_resolution";
 type ReviewDecision = "approve" | "request_changes" | "non_blocking_comments";
 
+const CONFIDENCE_LINE_RE = /(?:^|\n)\s*(?:\*\*)?confidence\s*:\s*(?:\*\*)?\s*(VERIFIED|HUNCH|QUESTION)\b/gi;
+
 function confidenceCounts(text: string) {
-	return {
-		verified: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*VERIFIED\b/gi)].length,
-		hunch: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*HUNCH\b/gi)].length,
-		question: [...text.matchAll(/confidence(?:\*\*)?\s*:\s*QUESTION\b/gi)].length,
-	};
+	const counts = { verified: 0, hunch: 0, question: 0 };
+	for (const match of text.matchAll(CONFIDENCE_LINE_RE)) {
+		const confidence = match[1]?.toLowerCase();
+		if (confidence === "verified") counts.verified += 1;
+		if (confidence === "hunch") counts.hunch += 1;
+		if (confidence === "question") counts.question += 1;
+	}
+	return counts;
 }
 
 function reviewStatusFromCounts(counts: ReturnType<typeof confidenceCounts>): ReviewStatus {
@@ -332,24 +373,53 @@ function summaryFromDecision(decision: ReviewDecision, counts: ReturnType<typeof
 	return `Overseer found ${parts.join(", ")} finding${counts.verified + counts.hunch + counts.question === 1 ? "" : "s"}. Full review is available in the artifact.`;
 }
 
-function reviewNotifyLevel(status: ReviewStatus): "info" | "warning" {
-	return status === "passed" ? "info" : "warning";
+async function pullRequestReviewDiff(cwd: string, ref: string): Promise<ReviewPullRequest> {
+	const [viewRaw, diff] = await Promise.all([
+		execText("gh", ["pr", "view", ref, "--json", "url,title,baseRefName,headRefName,files"], cwd, 30_000),
+		execText("gh", ["pr", "diff", ref], cwd, 30_000),
+	]);
+	const metadata = JSON.parse(viewRaw) as any;
+	const fileEntries = Array.isArray(metadata.files) ? metadata.files : [];
+	const files = fileEntries.map((file: any) => file.path).filter((path: unknown): path is string => typeof path === "string");
+	const stat = fileEntries.length
+		? fileEntries.map((file: any) => {
+			const path = typeof file.path === "string" ? file.path : "(unknown)";
+			const additions = typeof file.additions === "number" ? file.additions : 0;
+			const deletions = typeof file.deletions === "number" ? file.deletions : 0;
+			return `${path} | +${additions} -${deletions}`;
+		}).join("\n")
+		: "(gh pr view reported no file metadata)";
+	return {
+		kind: "pull_request",
+		ref,
+		url: typeof metadata.url === "string" ? metadata.url : undefined,
+		title: typeof metadata.title === "string" ? metadata.title : undefined,
+		baseRefName: typeof metadata.baseRefName === "string" ? metadata.baseRefName : undefined,
+		headRefName: typeof metadata.headRefName === "string" ? metadata.headRefName : undefined,
+		changed: files.join("\n"),
+		stat,
+		diff,
+	};
 }
 
-async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewDiff?: ReviewDiff, timeoutMs = REVIEW_WAIT_TIMEOUT_MS, signal?: AbortSignal) {
-	const selectedDiff = reviewDiff ?? (await currentReviewDiff(ctx.cwd));
-	if (!hasReviewableDiff(selectedDiff)) return { skipped: true as const, message: EMPTY_DIFF_MESSAGE };
+async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewSubject?: ReviewSubject, timeoutMs = REVIEW_WAIT_TIMEOUT_MS, signal?: AbortSignal) {
+	const selectedDiff = reviewSubject ?? (await currentReviewDiff(ctx.cwd));
+	if (!hasReviewableDiff(selectedDiff)) return { skipped: true as const, message: selectedDiff.kind === "pull_request" ? EMPTY_PR_DIFF_MESSAGE : EMPTY_DIFF_MESSAGE };
 	await mkdir(RUN_DIR, { recursive: true });
-	const promptPath = join(RUN_DIR, `review-${timestamp()}.md`);
-	const path = artifactPath || join(RUN_DIR, `artifact-${timestamp()}.json`);
+	const runTimestamp = timestamp();
+	const promptPath = join(RUN_DIR, `review-${runTimestamp}.md`);
+	const path = artifactPath || join(RUN_DIR, `artifact-${runTimestamp}.json`);
+	const logPath = join(RUN_DIR, `run-${runTimestamp}.log`);
 	await mkdir(dirname(path), { recursive: true });
 	await writeFile(promptPath, await reviewPromptBody(ctx, selectedDiff), "utf8");
+	await writeFile(logPath, `Overseer review started at ${new Date().toISOString()}\nArtifact: ${path}\nPrompt: ${promptPath}\n\n`, "utf8");
 	const startedAt = new Date().toISOString();
 	const startedArtifact = {
 		version: 1,
 		cwd: ctx.cwd,
-		diffMode: selectedDiff.mode,
+		subject: selectedDiff.kind === "pull_request" ? { kind: selectedDiff.kind, ref: selectedDiff.ref, url: selectedDiff.url } : { kind: selectedDiff.kind },
 		promptPath,
+		logPath,
 		createdAt: startedAt,
 		status: "running",
 		summary: `Overseer review is still running. Started at ${startedAt}.`,
@@ -361,7 +431,8 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, r
 	args.push("--name", "overseer review", "--system-prompt", REVIEW_SYSTEM_PROMPT, `@${promptPath}`);
 	let output: string;
 	try {
-		output = await execText("pi", args, ctx.cwd, timeoutMs, signal);
+		const result = await execTextStreaming("pi", args, { cwd: ctx.cwd, timeout: timeoutMs, signal, logPath });
+		output = result.stdout;
 	} catch (error) {
 		const execError = error as Error & { code?: string | number; killed?: boolean; signal?: string; stdout?: string; stderr?: string };
 		const timedOut = execError.killed || execError.signal === "SIGTERM" || execError.code === "ETIMEDOUT";
@@ -378,7 +449,7 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, r
 			stdout: execError.stdout,
 		};
 		await writeFile(path, JSON.stringify(failedArtifact, null, 2) + "\n", "utf8");
-		throw new Error(`${message} Artifact: ${path}${execError.stderr ? `\n\n${execError.stderr.trim()}` : ""}`);
+		throw new Error(`${message} Artifact: ${path} Log: ${logPath}${execError.stderr ? `\n\n${execError.stderr.trim()}` : ""}`);
 	}
 	const findings = extractReviewFindings(output);
 	const counts = confidenceCounts(findings);
@@ -387,8 +458,9 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, r
 	const artifact = {
 		version: 1,
 		cwd: ctx.cwd,
-		diffMode: selectedDiff.mode,
+		subject: selectedDiff.kind === "pull_request" ? { kind: selectedDiff.kind, ref: selectedDiff.ref, url: selectedDiff.url } : { kind: selectedDiff.kind },
 		promptPath,
+		logPath,
 		createdAt: startedAt,
 		completedAt: new Date().toISOString(),
 		status,
@@ -402,38 +474,7 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, r
 	return { skipped: false as const, path, artifact };
 }
 
-async function spawnReviewPane(ctx: ExtensionContext, reviewDiff?: ReviewDiff): Promise<OverseerState> {
-	const selectedDiff = reviewDiff ?? (await currentReviewDiff(ctx.cwd));
-	if (!hasReviewableDiff(selectedDiff)) throw new Error(EMPTY_DIFF_MESSAGE);
-	const promptPath = await writeReviewPrompt(ctx, selectedDiff);
-	const paneId = await splitRight(ctx.cwd);
-	const config = await loadOverseerConfig(ctx);
-	const configFlags = piConfigFlags(ctx, config);
-	const command = [
-		"cd " + shellQuote(ctx.cwd),
-		"printf '%s\\n' '[overseer] starting pi review session...'",
-		`pi --no-skills --no-prompt-templates --no-themes --no-context-files${configFlags ? ` ${configFlags}` : ""} --name ${shellQuote("overseer review")} --system-prompt ${shellQuote(REVIEW_SYSTEM_PROMPT)} @${shellQuote(promptPath)}`,
-	].join(" && ");
-	await execFileAsync("herdr", ["pane", "run", paneId, command], { cwd: ctx.cwd, timeout: 10_000 });
-	state.paneId = paneId;
-	state.promptPath = promptPath;
-	state.startedAt = Date.now();
-	state.monitorToken = Date.now();
-	return { ...state };
-}
-
-async function readPane(cwd: string, paneId: string, lines = "120"): Promise<string> {
-	return execText("herdr", ["pane", "read", paneId, "--source", "recent", "--lines", lines], cwd, 10_000);
-}
-
-async function waitForReviewerDone(cwd: string, paneId: string): Promise<void> {
-	await execFileAsync("herdr", ["wait", "agent-status", paneId, "--status", "done", "--timeout", String(REVIEW_WAIT_TIMEOUT_MS)], {
-		cwd,
-		timeout: REVIEW_WAIT_TIMEOUT_MS + 5_000,
-	});
-}
-
-const FINDING_CONFIDENCE_RE = /(?:^|\n)\s*(?:\*\*)?confidence(?:\*\*)?\s*:\s*(VERIFIED|HUNCH|QUESTION)\b/i;
+const FINDING_CONFIDENCE_RE = /(?:^|\n)\s*(?:\*\*)?confidence\s*:\s*(?:\*\*)?\s*(VERIFIED|HUNCH|QUESTION)\b/i;
 const FINDING_HEADING_RE = /(?:^|\n)\s*(?:##\s*)?finding\s*:/i;
 
 function hasFindingConfidence(text: string): boolean {
@@ -456,38 +497,6 @@ function extractReviewFindings(output: string): string {
 	if (findingSections.length > 0) return findingSections.join("\n\n");
 
 	return hasFindingConfidence(trimmed) ? trimmed : "";
-}
-
-function reviewCompleteResult(output: string): { findings: string; counts: ReturnType<typeof confidenceCounts>; status: ReviewStatus } {
-	const findings = extractReviewFindings(output);
-	const counts = confidenceCounts(findings);
-	return { findings, counts, status: reviewStatusFromCounts(counts) };
-}
-
-function reviewCompleteMessage(paneId: string, promptPath: string | undefined, output: string): string {
-	const { findings, status } = reviewCompleteResult(output);
-	const noFindings = findings.length === 0;
-	const result = noFindings ? "No VERIFIED, HUNCH, or QUESTION findings were found in the overseer output." : findings;
-	return [
-		`Overseer review completed in herdr pane ${paneId}: ${friendlyReviewStatus(status)}.`,
-		promptPath ? `Review prompt: ${promptPath}` : undefined,
-		"",
-		"IMPORTANT: You must respond to the user so they know you saw this review. Do not silently continue or sit idle.",
-		status === "passed"
-			? "The reviewer appears to have found no defensible issues. If you agree, explicitly say that you saw the overseer review and no action is needed."
-			: status === "has_questions"
-				? "Inspect these HUNCH/QUESTION findings and decide how to respond. If you make no changes, explicitly explain why. Treat them as leads, not facts."
-				: "Inspect these VERIFIED findings and decide how to respond. If you make no changes, explicitly explain why.",
-		"",
-		"Overseer result:",
-		"```",
-		result,
-		"```",
-	].filter((line): line is string => line !== undefined).join("\n");
-}
-
-function setOverseerStatus(ctx: ExtensionContext, text: string): void {
-	ctx.ui.setStatus("overseer", ctx.ui.theme.fg("dim", text));
 }
 
 async function doctorCheck(name: string, check: () => Promise<void>): Promise<string> {
@@ -572,6 +581,42 @@ async function listAvailableModels(cwd: string): Promise<string[]> {
 	}).filter((model): model is string => Boolean(model));
 }
 
+async function latestArtifactPath(): Promise<string | undefined> {
+	try {
+		const entries = await readdir(RUN_DIR);
+		const artifacts = await Promise.all(entries
+			.filter((entry) => entry.startsWith("artifact-") && entry.endsWith(".json"))
+			.map(async (entry) => {
+				const path = join(RUN_DIR, entry);
+				const info = await stat(path);
+				return { path, mtimeMs: info.mtimeMs };
+			}));
+		return artifacts.sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.path;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+async function runStatus(): Promise<string> {
+	const artifactPath = await latestArtifactPath();
+	if (!artifactPath) return `No overseer artifacts found in ${RUN_DIR}.`;
+	const raw = await readFile(artifactPath, "utf8");
+	const artifact = JSON.parse(raw) as { status?: string; decision?: string; summary?: string; createdAt?: string; completedAt?: string; promptPath?: string; logPath?: string };
+	const lines = [
+		"overseer status",
+		`status: ${artifact.status ?? "unknown"}`,
+		...(artifact.decision ? [`decision: ${artifact.decision}`] : []),
+		...(artifact.summary ? [`summary: ${artifact.summary}`] : []),
+		...(artifact.createdAt ? [`created: ${artifact.createdAt}`] : []),
+		...(artifact.completedAt ? [`completed: ${artifact.completedAt}`] : []),
+		`artifact: ${artifactPath}`,
+		...(artifact.promptPath ? [`prompt: ${artifact.promptPath}`] : []),
+		...(artifact.logPath ? [`log: ${artifact.logPath}`, `tail: tail -f ${JSON.stringify(artifact.logPath)}`] : ["log: not recorded for this artifact"]),
+	];
+	return lines.join("\n");
+}
+
 async function runSetup(ctx: ExtensionContext): Promise<string> {
 	const select = (ctx.ui as any).select as ((title: string, choices: string[]) => Promise<string | undefined>) | undefined;
 	const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
@@ -646,57 +691,26 @@ async function runSetup(ctx: ExtensionContext): Promise<string> {
 	return `${existingConfig ? "Updated" : "Created"} overseer config at ${path}.`;
 }
 
-function monitorReviewer(pi: ExtensionAPI, ctx: ExtensionContext, paneId: string, promptPath: string | undefined, token: number): void {
-	void (async () => {
-		try {
-			await waitForReviewerDone(ctx.cwd, paneId);
-			if (state.monitorToken !== token || state.paneId !== paneId) return;
-			const output = await readPane(ctx.cwd, paneId, "200");
-			const reviewResult = reviewCompleteResult(output);
-			setOverseerStatus(ctx, `overseer: ${friendlyReviewStatus(reviewResult.status)}`);
-			ctx.ui.notify(`Overseer review completed in pane ${paneId}: ${friendlyReviewStatus(reviewResult.status)}. Notifying the main agent.`, reviewNotifyLevel(reviewResult.status));
-			const message = reviewCompleteMessage(paneId, promptPath, output);
-			pi.sendMessage(
-				{
-					customType: CUSTOM_REVIEW_COMPLETE,
-					content: message,
-					display: true,
-					details: { paneId, promptPath, status: reviewResult.status, counts: reviewResult.counts, findings: reviewResult.findings },
-				},
-				{ deliverAs: "nextTurn" },
-			);
-			pi.sendUserMessage(message, { deliverAs: "followUp" });
-		} catch (error) {
-			if (state.monitorToken !== token || state.paneId !== paneId) return;
-			const message = error instanceof Error ? error.message : String(error);
-			setOverseerStatus(ctx, "overseer: error");
-			ctx.ui.notify(`Overseer monitor stopped for pane ${paneId}: ${message}`, "warning");
-		}
-	})();
-}
-
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event: any, ctx: ExtensionContext) => {
-		setOverseerStatus(ctx, state.paneId ? "overseer: reviewing" : "overseer: ready");
 		if (!state.firstRunGuidanceShown && !(await hasAnyOverseerConfig(ctx))) {
 			state.firstRunGuidanceShown = true;
 			ctx.ui.notify("Welcome to overseer! Run /overseer setup to choose review defaults, or try /overseer review anytime to review your current diff.", "info");
 		}
 	});
 
-	pi.on("session_shutdown", async () => {
-		// The reviewer pane is intentionally left running; it is a visible, independent pi session.
-	});
 
 	pi.registerTool({
 		name: "overseer_review",
 		label: "Overseer review",
-		description: "Run headless overseer review for the current uncommitted diff and persist a structured artifact.",
+		description: "Run headless overseer review for all local changes by default, or for a GitHub PR, and persist a structured artifact.",
 		parameters: Type.Object({
 			artifactPath: Type.Optional(Type.String({ description: "Path to write review artifact JSON. Defaults under ~/.pi/agent/overseer." })),
+			pr: Type.Optional(Type.String({ description: "GitHub PR URL or number to review with gh pr diff instead of local changes." })),
 		}),
-		async execute(_toolCallId: string, params: { artifactPath?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
-			const result = await runHeadlessReview(ctx, params.artifactPath, undefined, REVIEW_WAIT_TIMEOUT_MS, signal);
+		async execute(_toolCallId: string, params: { artifactPath?: string; pr?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+			const subject = params.pr ? await pullRequestReviewDiff(ctx.cwd, params.pr) : undefined;
+			const result = await runHeadlessReview(ctx, params.artifactPath, subject, REVIEW_WAIT_TIMEOUT_MS, signal);
 			if (result.skipped) {
 				return {
 					content: [{ type: "text", text: result.message }],
@@ -706,8 +720,8 @@ export default function (pi: ExtensionAPI) {
 			const { path, artifact } = result;
 			const summary = artifact.findings || "I found no defensible issues.";
 			return {
-				content: [{ type: "text", text: `Overseer review ${friendlyReviewStatus(artifact.status)}. Artifact: ${path}\n\n${summary}` }],
-				details: { path, status: artifact.status, counts: artifact.counts, findings: artifact.findings },
+				content: [{ type: "text", text: `Overseer review ${friendlyReviewStatus(artifact.status)}. Artifact: ${path}\nLog: ${artifact.logPath}\n\n${summary}` }],
+				details: { path, logPath: artifact.logPath, status: artifact.status, counts: artifact.counts, findings: artifact.findings },
 			};
 		},
 	});
@@ -717,15 +731,11 @@ export default function (pi: ExtensionAPI) {
 		label: "Request overseer review",
 		description: "Ask overseer for a compact approve/request_changes/non_blocking_comments review decision without returning full findings.",
 		parameters: Type.Object({
-			diffMode: Type.Optional(Type.Union([
-				Type.Literal("unstaged"),
-				Type.Literal("staged"),
-				Type.Literal("all"),
-			], { description: "Diff scope to review. Defaults to unstaged." })),
+			pr: Type.Optional(Type.String({ description: "GitHub PR URL or number to review with gh pr diff instead of local changes." })),
 			artifactPath: Type.Optional(Type.String({ description: "Path to write review artifact JSON. Defaults under ~/.pi/agent/overseer." })),
 		}),
-		async execute(_toolCallId: string, params: { diffMode?: ReviewDiffMode; artifactPath?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
-			const reviewDiff = await currentReviewDiff(ctx.cwd, params.diffMode ?? "unstaged");
+		async execute(_toolCallId: string, params: { pr?: string; artifactPath?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+			const reviewDiff = params.pr ? await pullRequestReviewDiff(ctx.cwd, params.pr) : await currentReviewDiff(ctx.cwd);
 			const result = await runHeadlessReview(ctx, params.artifactPath, reviewDiff, COMPACT_REVIEW_WAIT_TIMEOUT_MS, signal);
 			if (result.skipped) {
 				return {
@@ -735,9 +745,10 @@ export default function (pi: ExtensionAPI) {
 			}
 			const { path, artifact } = result;
 			return {
-				content: [{ type: "text", text: `Overseer decision: ${artifact.decision}\nArtifact: ${path}\nSummary: ${artifact.summary}` }],
+				content: [{ type: "text", text: `Overseer decision: ${artifact.decision}\nArtifact: ${path}\nLog: ${artifact.logPath}\nSummary: ${artifact.summary}` }],
 				details: {
 					artifactPath: path,
+					logPath: artifact.logPath,
 					decision: artifact.decision,
 					status: artifact.status,
 					counts: artifact.counts,
@@ -790,33 +801,13 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
-		name: "overseer_read_pane",
-		label: "Read overseer pane",
-		description: "Read recent output from the latest herdr pane spawned by /overseer review.",
-		parameters: Type.Object({
-			lines: Type.Optional(Type.String({ description: "Number of recent lines to read. Defaults to 120." })),
-		}),
-		async execute(_toolCallId: string, params: { lines?: string }, _signal: any, _onUpdate: unknown, ctx: ExtensionContext) {
-			if (!state.paneId) {
-				return { content: [{ type: "text", text: "No overseer pane has been spawned in this session." }], details: {} };
-			}
-			const output = await readPane(ctx.cwd, state.paneId, params.lines ?? "120");
-			return { content: [{ type: "text", text: output || `(pane ${state.paneId} had no recent output)` }], details: { ...state } };
-		},
-	});
-
 	pi.registerCommand("overseer", {
-		description: "Overseer adversarial review: review [--pane/--headed] [--staged|--cached|--all], pane, read, doctor, setup, help",
+		description: "Overseer adversarial review: review [--pr <url|number>], status, doctor, setup, help",
 		getArgumentCompletions(prefix: string) {
 			const items = [
-				{ value: "review", label: "review", description: "Run headless review of current diff" },
-				{ value: "review --pane", label: "review --pane", description: "Spawn review in a herdr pane" },
-				{ value: "review --staged", label: "review --staged", description: "Review staged changes" },
-				{ value: "review --all", label: "review --all", description: "Review staged and unstaged changes" },
-				{ value: "pane", label: "pane", description: "Show current overseer pane" },
-				{ value: "status", label: "status", description: "Show current overseer pane/status" },
-				{ value: "read", label: "read", description: "Read latest overseer pane output" },
+				{ value: "review", label: "review", description: "Review all local changes, including untracked files" },
+				{ value: "review --pr ", label: "review --pr", description: "Review a GitHub PR with gh" },
+				{ value: "status", label: "status", description: "Show latest overseer run status and log path" },
 				{ value: "doctor", label: "doctor", description: "Check overseer setup" },
 				{ value: "setup", label: "setup", description: "Configure overseer" },
 				{ value: "help", label: "help", description: "Show help" },
@@ -828,16 +819,14 @@ export default function (pi: ExtensionAPI) {
 			const tokens = args.trim().split(/\s+/).filter(Boolean);
 			const command = tokens[0]?.startsWith("--") ? "review" : tokens[0] || "review";
 			const commandArgs = tokens[0]?.startsWith("--") ? tokens : tokens.slice(1);
-			const flags = new Set(commandArgs.filter((token) => token.startsWith("--")));
-			const maybeLines = commandArgs.find((token) => !token.startsWith("--"));
-
 			if (command === "help" || command === "--help" || command === "-h") {
 				ctx.ui.notify(HELP, "info");
 				return;
 			}
 
-			if (command === "pane" || command === "status") {
-				ctx.ui.notify(state.paneId ? `Overseer pane: ${state.paneId}\nPrompt: ${state.promptPath}` : "No overseer pane has been spawned yet.", "info");
+
+			if (command === "status") {
+				ctx.ui.notify(await runStatus(), "info");
 				return;
 			}
 
@@ -851,60 +840,16 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			if (command === "read") {
-				if (!state.paneId) {
-					ctx.ui.notify("No overseer pane has been spawned yet.", "info");
-					return;
-				}
-				const output = await readPane(ctx.cwd, state.paneId, maybeLines || "120");
-				ctx.ui.notify(`Overseer pane ${state.paneId}:\n\n${output}`, "info");
-				return;
-			}
 
 			if (command !== "review") {
 				ctx.ui.notify(HELP, "warning");
 				return;
 			}
 
-			const reviewDiffMode = reviewDiffModeFromFlags(flags);
-			const reviewDiff = await currentReviewDiff(ctx.cwd, reviewDiffMode);
-			if (!hasReviewableDiff(reviewDiff)) {
-				setOverseerStatus(ctx, "overseer: ready");
-				ctx.ui.notify(EMPTY_DIFF_MESSAGE, "info");
-				return;
-			}
-
-			if (flags.has("--pane") || flags.has("--headed")) {
-				setOverseerStatus(ctx, "overseer: spawning");
-				try {
-					const spawned = await spawnReviewPane(ctx, reviewDiff);
-					setOverseerStatus(ctx, "overseer: reviewing");
-					if (spawned.paneId && spawned.monitorToken) monitorReviewer(pi, ctx, spawned.paneId, spawned.promptPath, spawned.monitorToken);
-					ctx.ui.notify(`Overseer review spawned in herdr pane ${spawned.paneId}.\nPrompt: ${spawned.promptPath}\nThe main agent will be notified when the reviewer finishes. Use /overseer read or the overseer_read_pane tool to inspect output sooner.`, "info");
-				} catch (error) {
-					setOverseerStatus(ctx, "overseer: error");
-					ctx.ui.notify(`Could not spawn overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
-					throw error;
-				}
-				return;
-			}
-
-			try {
-				setOverseerStatus(ctx, "overseer: reviewing");
-				const result = await runHeadlessReview(ctx, undefined, reviewDiff);
-				if (result.skipped) {
-					setOverseerStatus(ctx, "overseer: ready");
-					ctx.ui.notify(result.message, "info");
-					return;
-				}
-				const { path, artifact } = result;
-				setOverseerStatus(ctx, `overseer: ${friendlyReviewStatus(artifact.status)}`);
-				const summary = artifact.findings || "I found no defensible issues.";
-				ctx.ui.notify(`Overseer review ${friendlyReviewStatus(artifact.status)}.\nArtifact: ${path}\n\n${summary}`, reviewNotifyLevel(artifact.status));
-			} catch (error) {
-				setOverseerStatus(ctx, "overseer: error");
-				ctx.ui.notify(`Could not run overseer review: ${error instanceof Error ? error.message : String(error)}`, "error");
-			}
+			const prFlagIndex = commandArgs.findIndex((token) => token === "--pr" || token === "--github-pr");
+			const prRef = prFlagIndex >= 0 ? commandArgs[prFlagIndex + 1] : commandArgs.find((token) => /^https:\/\/github\.com\/.+\/pull\/\d+/.test(token));
+			const params = prRef ? ` with { "pr": ${JSON.stringify(prRef)} }` : " for the current local changes";
+			pi.sendUserMessage(`Run the overseer_review tool${params}. Do not perform any other work before calling the tool.`, { deliverAs: "followUp" });
 		},
 	});
 }
