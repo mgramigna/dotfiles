@@ -131,8 +131,11 @@ export default function (pi: ExtensionAPI) {
 			if (isIgnoredDiagnosticPath(state.path)) return total;
 			return total + state.diagnostics.filter((d) => d.severity === ERROR).length;
 		}, 0);
-		const text = errorCount > 0 ? `ts-lsp: ${errorCount} err` : "ts-lsp: ok";
-		ctx.ui.setStatus?.("typescript-lsp", ctx.ui.theme.fg("dim", text));
+		const theme = ctx.ui.theme;
+		const degraded = lastHealth.startsWith("degraded") || lastHealth.startsWith("unavailable");
+		const dotColor = degraded ? "error" : errorCount > 0 ? "warning" : "success";
+		const text = degraded ? "ts-lsp: degraded" : errorCount > 0 ? `ts-lsp: ${errorCount} err` : "ts-lsp: ok";
+		ctx.ui.setStatus?.("typescript-lsp", `${theme.fg(dotColor, "●")} ${theme.fg("dim", text)}`);
 	}
 
 	pi.on("session_start", (_event, ctx) => {

@@ -46,7 +46,7 @@ type CommandContext = {
     select?: (title: string, choices: string[]) => Promise<string | undefined>;
     confirm?: (title: string, message: string) => Promise<boolean>;
     setStatus?: (key: string, value: string | undefined) => void;
-    theme?: { fg: (color: "dim", text: string) => string };
+    theme?: { fg: (color: string, text: string) => string; bold: (text: string) => string };
     setWidget?: (
       key: string,
       value: string[] | undefined,
@@ -957,26 +957,30 @@ function topologicalSlices(state: OrchestratorRunState) {
 }
 
 function createProgress(ui: CommandContext["ui"], runId: string) {
+  const theme = ui.theme;
+  const color = (name: string, text: string) => theme?.fg(name, text) ?? text;
+  const bold = (text: string) => theme?.bold(text) ?? text;
+
   return {
     update: (progress: Progress) => {
       const status = progress.iteration
         ? `orchestrator ${runId} #${progress.iteration} ${progress.phase}`
         : `orchestrator ${runId} ${progress.phase}`;
 
-      ui.setStatus?.("orchestrator", ui.theme?.fg("dim", status) ?? status);
-      ui.setWidget?.(
-        "orchestrator-progress",
-        [
-          `Orchestrator ${runId}`,
-          progress.iteration ? `iteration: ${progress.iteration}` : undefined,
-          `phase: ${progress.phase}`,
-          progress.state ? `issues: ${countLifecycles(progress.state)}` : undefined,
-          progress.last ? `last: ${progress.last}` : undefined,
-        ]
-          .filter((line): line is string => Boolean(line))
-          .map((line) => ui.theme?.fg("dim", line) ?? line),
-        { placement: "aboveEditor" },
-      );
+      ui.setStatus?.("orchestrator", `${color("accent", "●")} ${color("dim", status)}`);
+
+      const field = (label: string, value: string, valueColor = "text") =>
+        `${color("muted", `${label}:`)} ${color(valueColor, value)}`;
+
+      const lines = [
+        `${color("accent", bold("Orchestrator"))} ${color("dim", runId)}`,
+        progress.iteration ? field("iteration", String(progress.iteration)) : undefined,
+        field("phase", progress.phase, "accent"),
+        progress.state ? field("issues", countLifecycles(progress.state)) : undefined,
+        progress.last ? field("last", progress.last) : undefined,
+      ].filter((line): line is string => Boolean(line));
+
+      ui.setWidget?.("orchestrator-progress", lines, { placement: "aboveEditor" });
     },
     clear: () => {
       ui.setStatus?.("orchestrator", undefined);

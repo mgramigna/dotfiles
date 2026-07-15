@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
 const execFileAsync = promisify(execFile);
@@ -90,13 +91,28 @@ function truncate(text: string, maxLength: number): string {
 	return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
 }
 
-function optionLabel(comment: PrComment, selected: boolean, index: number): string {
-	const mark = selected ? "☑" : "☐";
+function renderCommentRow(
+	comment: PrComment,
+	checked: boolean,
+	index: number,
+	isCurrent: boolean,
+	maxWidth: number,
+	theme: any,
+): string {
 	const location = comment.path
 		? ` ${comment.path}${comment.line ? `:${comment.line}` : ""}`
 		: "";
-	const resolved = comment.resolved ? " resolved" : "";
-	return `${mark} ${index + 1}. @${comment.author}${location}${resolved} — ${truncate(comment.body, 90)}`;
+	const resolvedTag = comment.resolved ? " resolved" : "";
+	const rest = `${index + 1}. @${comment.author}${location}${resolvedTag} — ${truncate(comment.body, 90)}`;
+
+	if (isCurrent) {
+		const mark = checked ? "☑" : "☐";
+		return theme.fg("accent", truncateToWidth(`${mark} ${rest}`, maxWidth, ""));
+	}
+
+	const mark = checked ? theme.fg("success", "☑") : theme.fg("dim", "☐");
+	const restColored = comment.resolved ? theme.fg("muted", rest) : theme.fg("text", rest);
+	return truncateToWidth(`${mark} ${restColored}`, maxWidth, "");
 }
 
 function commentPrompt(comment: PrComment, index: number): string {
@@ -212,6 +228,7 @@ async function chooseComments(ctx: ExtensionCommandContext, comments: PrComment[
 	const unresolvedCount = comments.length - resolvedCount;
 
 	const result = await ctx.ui.custom<PrComment[] | null>((tui, theme, keybindings, done) => {
+		const border = new DynamicBorder((s: string) => theme.fg("accent", s));
 		let showResolved = false;
 		let selectedIndex = 2;
 
@@ -230,36 +247,48 @@ async function chooseComments(ctx: ExtensionCommandContext, comments: PrComment[
 				clampSelectedIndex();
 				const visible = visibleComments();
 				const title = `Select PR comments to address (${unresolvedCount} unresolved, ${resolvedCount} resolved)`;
+				const doneLabel = selected.size === 0 ? "Done (select none)" : `Done (${selected.size} selected)`;
 				const toggleResolvedLabel = showResolved
 					? `Hide resolved comments (${resolvedCount})`
 					: `Show resolved comments (${resolvedCount})`;
-				const labels = [
-					selected.size === 0 ? "Done (select none)" : `Done (${selected.size} selected)`,
-					toggleResolvedLabel,
-					...visible.map((comment, index) => optionLabel(comment, selected.has(comment.id), index)),
-				];
+				const rowCount = visible.length + 2;
 				const maxVisible = 14;
 				const startIndex = Math.max(
 					0,
-					Math.min(selectedIndex - Math.floor(maxVisible / 2), labels.length - maxVisible),
+					Math.min(selectedIndex - Math.floor(maxVisible / 2), rowCount - maxVisible),
 				);
-				const endIndex = Math.min(startIndex + maxVisible, labels.length);
-				const lines = [theme.fg("accent", theme.bold(title))];
+				const endIndex = Math.min(startIndex + maxVisible, rowCount);
+
+				const lines: string[] = [];
+				lines.push(...border.render(width));
+				lines.push(theme.fg("accent", theme.bold(title)));
 
 				for (let index = startIndex; index < endIndex; index++) {
-					const prefix = index === selectedIndex ? "→ " : "  ";
-					const text = truncateToWidth(`${prefix}${labels[index] ?? ""}`, width - 2, "");
-					lines.push(index === selectedIndex ? theme.fg("accent", text) : text);
+					const isCurrent = index === selectedIndex;
+					const prefix = isCurrent ? theme.fg("accent", "→ ") : "  ";
+					let colored: string;
+					if (index === 0) {
+						const body = truncateToWidth(doneLabel, width - 2, "");
+						colored = isCurrent ? theme.fg("accent", theme.bold(body)) : theme.fg("success", body);
+					} else if (index === 1) {
+						const body = truncateToWidth(toggleResolvedLabel, width - 2, "");
+						colored = isCurrent ? theme.fg("accent", body) : theme.fg("muted", body);
+					} else {
+						const comment = visible[index - 2]!;
+						colored = renderCommentRow(comment, selected.has(comment.id), index - 2, isCurrent, width - 2, theme);
+					}
+					lines.push(`${prefix}${colored}`);
 				}
 
-				if (startIndex > 0 || endIndex < labels.length) {
-					lines.push(theme.fg("dim", `  (${selectedIndex + 1}/${labels.length})`));
+				if (startIndex > 0 || endIndex < rowCount) {
+					lines.push(theme.fg("dim", `  (${selectedIndex + 1}/${rowCount})`));
 				}
 
 				lines.push(theme.fg("dim", "↑↓ navigate • enter toggles/moves next • done to start • esc cancel"));
+				lines.push(...border.render(width));
 				return lines;
 			},
-			invalidate: () => {},
+			invalidate: () => border.invalidate(),
 			handleInput: (data) => {
 				if (keybindings.matches(data, "tui.select.up")) {
 					selectedIndex = selectedIndex === 0 ? itemCount() - 1 : selectedIndex - 1;

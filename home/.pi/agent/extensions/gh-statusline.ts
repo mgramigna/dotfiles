@@ -91,12 +91,12 @@ function isFailedRun(run: WorkflowRun): boolean {
 	return ["failure", "cancelled", "timed_out", "action_required"].includes(run.conclusion ?? "");
 }
 
-function summarizeChecks(checks: PrCheck[] | null): string {
-	if (!checks) return "checks ?";
+function summarizeChecks(checks: PrCheck[] | null, theme: any): string {
+	if (!checks) return theme.fg("warning", "checks ?");
 
 	const total = checks.length;
 
-	if (total === 0) return "checks none";
+	if (total === 0) return theme.fg("dim", "checks none");
 
 	const passedStates = new Set<CheckState>(["PASS", "SKIP", "SUCCESS", "NEUTRAL", "SKIPPED"]);
 	const failedStates = new Set<CheckState>([
@@ -114,9 +114,10 @@ function summarizeChecks(checks: PrCheck[] | null): string {
 	const failed = checks.filter((check) => failedStates.has(check.state ?? "")).length;
 	const pending = Math.max(0, total - passed - failed);
 
-	if (failed > 0) return `${passed}/${total} ✓ ${failed} ✗`;
-	if (pending > 0) return `${passed}/${total} ✓ ${pending} …`;
-	return `${passed}/${total} ✓`;
+	const parts = [theme.fg("success", `${passed}/${total} ✓`)];
+	if (failed > 0) parts.push(theme.fg("error", `${failed} ✗`));
+	if (pending > 0) parts.push(theme.fg("warning", `${pending} …`));
+	return parts.join(" ");
 }
 
 async function openCurrentPr(ctx: ExtensionContext): Promise<void> {
@@ -230,14 +231,9 @@ async function refresh(ctx: ExtensionContext): Promise<void> {
 	);
 
 	const prText = osc8(`#${pr.number}`, pr.url);
-	const checksText = summarizeChecks(checks);
-	const color = checksText.includes("✗")
-		? "error"
-		: checksText.includes("…") || checksText.includes("?")
-			? "warning"
-			: "success";
+	const checksText = summarizeChecks(checks, theme);
 
-	ctx.ui.setStatus(STATUS_KEY, `${theme.fg("accent", "PR ")}${prText} ${theme.fg(color, checksText)}`);
+	ctx.ui.setStatus(STATUS_KEY, `${theme.fg("accent", "PR ")}${prText} ${checksText}`);
 }
 
 export default function (pi: ExtensionAPI) {

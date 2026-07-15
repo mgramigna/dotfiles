@@ -208,8 +208,8 @@ export default function trioExtension(pi: ExtensionAPI): void {
 		const content = typeof message.content === "string" ? message.content : String(message.content ?? "");
 		const [title = "Trio workflow started", ...rest] = content.split("\n");
 		const body = rest.join("\n").trim();
-		const header = `${theme.fg("accent", "◆")} ${theme.fg("dim", title)}`;
-		const text = body ? `${header}\n${theme.fg("dim", body)}` : header;
+		const header = `${theme.fg("accent", "◆")} ${theme.fg("accent", theme.bold(title))}`;
+		const text = body ? `${header}\n${theme.fg("muted", body)}` : header;
 		const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
 		box.addChild(new Text(text, 0, 0));
 		return box;
@@ -277,7 +277,11 @@ export default function trioExtension(pi: ExtensionAPI): void {
 		}
 		const maxRounds = config?.maxReviewRounds ?? MAX_REVIEW_ROUNDS;
 		const round = state.phase === "reviewing" ? ` (${state.reviewRound + 1}/${maxRounds})` : "";
-		ctx.ui.setStatus("trio", ctx.ui.theme.fg("dim", `trio: ${phaseLabel(state.phase)}${round}`));
+		const theme = ctx.ui.theme;
+		ctx.ui.setStatus(
+			"trio",
+			`${theme.fg("accent", "◆")} ${theme.fg("dim", "trio:")} ${theme.fg("accent", phaseLabel(state.phase))}${theme.fg("dim", round)}`,
+		);
 	}
 
 	function requirePhase(expected: TrioPhase): TrioWorkflowState {
