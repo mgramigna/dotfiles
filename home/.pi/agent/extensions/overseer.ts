@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { getAgentDir, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { autocompleteSelect } from "./autocomplete-select";
+import { autocompleteSelect } from "../shared/autocomplete-select";
 
 const execFileAsync = promisify(execFile);
 

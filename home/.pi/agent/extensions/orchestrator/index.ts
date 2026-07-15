@@ -34,7 +34,7 @@ import {
   writeWorkerPrompt,
 } from "./storage";
 import { buildWorkerPrompt } from "./worker-prompt";
-import { autocompleteSelect } from "../autocomplete-select";
+import { autocompleteSelect } from "../../shared/autocomplete-select";
 import { createWorktrunkWorktree } from "./worktrunk";
 
 type CommandContext = {

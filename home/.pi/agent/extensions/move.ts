@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 
 import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { autocompleteSelect } from "./autocomplete-select";
+import { autocompleteSelect } from "../shared/autocomplete-select";
 
 type Worktree = {
 	path: string;

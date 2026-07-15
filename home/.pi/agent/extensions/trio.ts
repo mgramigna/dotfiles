@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { autocompleteSelect } from "./autocomplete-select";
+import { autocompleteSelect } from "../shared/autocomplete-select";
 
 const CONFIG_FILE_NAME = "trio.json";
 const TRIO_STATE_ENTRY = "trio-workflow";

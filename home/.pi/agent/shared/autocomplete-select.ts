@@ -1,4 +1,4 @@
-import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	fuzzyFilter,
@@ -88,10 +88,6 @@ export class AutocompleteSelect implements Component, Focusable {
 		(this.selectList as any).filteredItems = matches;
 		this.selectList.setSelectedIndex(0);
 	}
-}
-
-export default function (_pi: ExtensionAPI): void {
-	// Helper module loaded as a no-op extension because pi loads top-level files in extensions/.
 }
 
 export async function autocompleteSelect(ctx: any, options: AutocompleteSelectOptions): Promise<string | undefined> {
