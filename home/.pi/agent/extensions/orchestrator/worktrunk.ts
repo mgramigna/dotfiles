@@ -19,30 +19,53 @@ export async function createWorktrunkWorktree(input: {
   await mkdir(dirname(input.logPath), { recursive: true });
   await appendLog(input.logPath, `# Worktrunk setup ${new Date().toISOString()}\n`);
   await run(input.cwd, "git", ["fetch", "origin"], input.logPath);
+
+  const baseRef = input.baseRef ?? `origin/${input.baseBranch ?? "dev"}`;
+  const existingWorktreePath = await findWorktreePath(input.cwd, input.branch, input.logPath);
+
+  if (existingWorktreePath) {
+    await resetExistingWorktree(existingWorktreePath, baseRef, input.logPath);
+
+    return {
+      branch: input.branch,
+      worktreePath: existingWorktreePath,
+      worktrunkConfigPath: input.worktrunkConfigPath,
+    };
+  }
+
   await run(
     input.cwd,
     "wt",
-    [
-      "switch",
-      "--create",
-      "--base",
-      input.baseRef ?? `origin/${input.baseBranch ?? "dev"}`,
-      "--no-cd",
-      "--yes",
-      input.branch,
-    ],
+    ["switch", "--create", "--base", baseRef, "--no-cd", "--yes", input.branch],
     input.logPath,
   );
 
   return {
     branch: input.branch,
-    worktreePath: await getWorktreePath(input.cwd, input.branch),
+    worktreePath: await getWorktreePath(input.cwd, input.branch, input.logPath),
     worktrunkConfigPath: input.worktrunkConfigPath,
   };
 }
 
-async function getWorktreePath(cwd: string, branch: string): Promise<string> {
-  const output = await run(cwd, "git", ["worktree", "list", "--porcelain"]);
+async function resetExistingWorktree(worktreePath: string, baseRef: string, logPath: string): Promise<void> {
+  const status = await run(worktreePath, "git", ["status", "--porcelain"], logPath);
+  if (status.trim()) {
+    throw new Error(`Existing orchestrator worktree has uncommitted changes: ${worktreePath}`);
+  }
+
+  await run(worktreePath, "git", ["reset", "--hard", baseRef], logPath);
+  await run(worktreePath, "git", ["clean", "-fd"], logPath);
+}
+
+async function getWorktreePath(cwd: string, branch: string, logPath?: string): Promise<string> {
+  const worktreePath = await findWorktreePath(cwd, branch, logPath);
+  if (worktreePath) return worktreePath;
+
+  throw new Error(`Could not find worktree for ${branch}`);
+}
+
+async function findWorktreePath(cwd: string, branch: string, logPath?: string): Promise<string | undefined> {
+  const output = await run(cwd, "git", ["worktree", "list", "--porcelain"], logPath);
   let currentPath: string | undefined;
 
   for (const line of output.split("\n")) {
@@ -53,8 +76,6 @@ async function getWorktreePath(cwd: string, branch: string): Promise<string> {
 
     if (line === `branch refs/heads/${branch}` && currentPath) return currentPath;
   }
-
-  throw new Error(`Could not find worktree for ${branch}`);
 }
 
 function run(cwd: string, command: string, args: string[], logPath?: string): Promise<string> {

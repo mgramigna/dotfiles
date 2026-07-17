@@ -743,7 +743,8 @@ async function integrateRun(
 
     if (config.publishMode === "stacked-prs") {
       const branch = `orchestrator/${runId}/issue-${slice.issueNumber}`;
-      await runCommand("git", ["branch", "--force", branch, "HEAD"], { cwd });
+      const target = (await runCommand("git", ["rev-parse", "HEAD"], { cwd })).trim();
+      await forceUpdateBranch({ cwd, branch, target, worktreePath: slice.worker?.worktreePath });
       stackBranches.push({ issueNumber: slice.issueNumber, branch, base: previousBase, title: slice.title });
       previousBase = branch;
     }
@@ -916,10 +917,15 @@ async function getWorkerBaseRef(
   const index = ordered.findIndex((slice) => slice.issueNumber === issueNumber);
 
   if (index < 0) throw new Error(`Unknown issue #${issueNumber}`);
-  if (index === 0) return `origin/${await getTrunkBranch(cwd)}`;
 
-  const previousBranch = ordered[index - 1]?.worker?.branch;
-  if (!previousBranch) throw new Error(`Previous issue for #${issueNumber} has no branch`);
+  const slice = ordered[index];
+  if (!slice.dependencies.length) return `origin/${await getTrunkBranch(cwd)}`;
+
+  const dependencyBranches = slice.dependencies
+    .map((dependency) => state.slices[String(dependency)]?.worker?.branch)
+    .filter((branch): branch is string => Boolean(branch));
+  const previousBranch = dependencyBranches.at(-1);
+  if (!previousBranch) throw new Error(`Dependencies for #${issueNumber} have no branch`);
 
   return previousBranch;
 }
@@ -1104,6 +1110,32 @@ async function findPullRequest(
   } catch {
     return undefined;
   }
+}
+
+async function forceUpdateBranch(input: {
+  cwd: string;
+  branch: string;
+  target: string;
+  worktreePath?: string;
+}): Promise<void> {
+  if (!input.worktreePath) {
+    await runCommand("git", ["branch", "--force", input.branch, input.target], { cwd: input.cwd });
+    return;
+  }
+
+  const currentBranch = (await runCommand("git", ["branch", "--show-current"], { cwd: input.worktreePath })).trim();
+  if (currentBranch !== input.branch) {
+    await runCommand("git", ["branch", "--force", input.branch, input.target], { cwd: input.cwd });
+    return;
+  }
+
+  const status = await runCommand("git", ["status", "--porcelain"], { cwd: input.worktreePath });
+  if (status.trim()) {
+    throw new Error(`Cannot update checked-out branch ${input.branch}; worktree has uncommitted changes: ${input.worktreePath}`);
+  }
+
+  await runCommand("git", ["reset", "--hard", input.target], { cwd: input.worktreePath });
+  await runCommand("git", ["clean", "-fd"], { cwd: input.worktreePath });
 }
 
 function runCommand(command: string, args: string[], options: { cwd: string }): Promise<string> {
