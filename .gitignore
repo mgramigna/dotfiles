@@ -16,5 +16,8 @@ home/.pi/agent/references.json
 home/.pi/agent/trust.json
 home/.pi/agent/logs/overseer-*.log
 home/.pi/agent/orchestrator/
+home/.pi/agent/overseer/
+home/.pi/agent/models-store.json
+home/.pi/agent/advisor
 home/.pi/agent/advisor.json
 **/.pi/advisor.json
