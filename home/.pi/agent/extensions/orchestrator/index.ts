@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import {
   type OrchestratorConfig,
@@ -15,6 +15,7 @@ import { detectGitHubRepo, fetchParentAndSlices } from "./github";
 import { type PiWorkerSpawnMode, spawnPiWorker } from "./pi-worker";
 import {
   type OrchestratorRunState,
+  type OrchestratorSliceState,
   completeSliceWorker,
   createInitialRunState,
   failSliceWorker,
@@ -724,63 +725,81 @@ async function integrateRun(
   }
 
   const trunkBranch = await getTrunkBranch(cwd);
-  const integrationBranch = `orchestrator/${runId}/integration`;
+  const effectivePublishMode = getEffectivePublishMode(config, state);
 
   await runCommand("git", ["fetch", "origin"], { cwd });
-  await runCommand(
-    "git",
-    ["switch", "--force-create", integrationBranch, `origin/${trunkBranch}`],
-    { cwd },
-  );
+  const integrationWorktreePath = await prepareIntegrationWorktree({
+    cwd,
+    runId,
+    baseRef: `origin/${trunkBranch}`,
+  });
 
-  const stackBranches: { issueNumber: number; branch: string; base: string; title: string }[] = [];
-  let previousBase = trunkBranch;
-  for (const slice of ordered) {
-    const commits = slice.worker?.result?.status === "completed" ? slice.worker.result.commits : [];
-    if (commits.length !== 1)
-      throw new Error(`Slice #${slice.issueNumber} must have exactly one commit`);
-    await runCommand("git", ["cherry-pick", commits[0] ?? ""], { cwd });
-
-    if (config.publishMode === "stacked-prs") {
-      const branch = `orchestrator/${runId}/issue-${slice.issueNumber}`;
-      const target = (await runCommand("git", ["rev-parse", "HEAD"], { cwd })).trim();
-      await forceUpdateBranch({ cwd, branch, target, worktreePath: slice.worker?.worktreePath });
-      stackBranches.push({ issueNumber: slice.issueNumber, branch, base: previousBase, title: slice.title });
-      previousBase = branch;
-    }
-  }
-
-  if (config.publishMode === "none") {
-    await appendRunEvent(cwd, runId, {
-      type: "integrated",
-      at: new Date().toISOString(),
-      branch: integrationBranch,
+  if (effectivePublishMode === "stacked-prs") {
+    const stackBranches = await buildStackBranches({
+      cwd: integrationWorktreePath,
+      runId,
+      trunkBranch,
+      ordered,
     });
-    return [`run: ${runId}`, "decision: integrated", `branch: ${integrationBranch}`].join("\n");
-  }
-
-  if (config.publishMode === "stacked-prs") {
-    const prs = await ensureStackedPullRequests({ cwd, parentIssueNumber, state, branches: stackBranches });
+    const prs = await ensureStackedPullRequests({
+      cwd: integrationWorktreePath,
+      parentIssueNumber,
+      state,
+      branches: stackBranches,
+    });
     await appendRunEvent(cwd, runId, {
       type: "integrated",
       at: new Date().toISOString(),
-      branch: integrationBranch,
+      branch: stackBranches.at(-1)?.branch,
+      worktreePath: integrationWorktreePath,
       pullRequest: prs.map((pr) => pr.url).join(", "),
     });
     return [
       `run: ${runId}`,
       "decision: integrated as stacked PRs",
-      `integration branch: ${integrationBranch}`,
+      `worktree: ${integrationWorktreePath}`,
       ...prs.map((pr) => `#${pr.issueNumber}: ${pr.url}`),
     ].join("\n");
   }
 
+  const integrationBranch = `orchestrator/${runId}/integration`;
+  await runCommand(
+    "git",
+    ["switch", "--force-create", integrationBranch, `origin/${trunkBranch}`],
+    { cwd: integrationWorktreePath },
+  );
+
+  for (const slice of ordered) {
+    const commit = getCompletedSliceCommit(slice);
+    await cherryPickSliceCommit({
+      cwd: integrationWorktreePath,
+      commit,
+      issueNumber: slice.issueNumber,
+      base: integrationBranch,
+    });
+  }
+
+  if (effectivePublishMode === "none") {
+    await appendRunEvent(cwd, runId, {
+      type: "integrated",
+      at: new Date().toISOString(),
+      branch: integrationBranch,
+      worktreePath: integrationWorktreePath,
+    });
+    return [
+      `run: ${runId}`,
+      "decision: integrated",
+      `branch: ${integrationBranch}`,
+      `worktree: ${integrationWorktreePath}`,
+    ].join("\n");
+  }
+
   await runCommand("git", ["push", "--force-with-lease", "-u", "origin", integrationBranch], {
-    cwd,
+    cwd: integrationWorktreePath,
   });
 
   const pr = await ensureFinalPullRequest({
-    cwd,
+    cwd: integrationWorktreePath,
     branch: integrationBranch,
     parentIssueNumber,
     state,
@@ -789,6 +808,7 @@ async function integrateRun(
     type: "integrated",
     at: new Date().toISOString(),
     branch: integrationBranch,
+    worktreePath: integrationWorktreePath,
     pullRequest: pr.url,
   });
 
@@ -796,8 +816,113 @@ async function integrateRun(
     `run: ${runId}`,
     "decision: integrated",
     `branch: ${integrationBranch}`,
+    `worktree: ${integrationWorktreePath}`,
     `pr: ${pr.url}`,
   ].join("\n");
+}
+
+async function prepareIntegrationWorktree(input: {
+  cwd: string;
+  runId: string;
+  baseRef: string;
+}): Promise<string> {
+  const repoRoot = (await runCommand("git", ["rev-parse", "--show-toplevel"], { cwd: input.cwd })).trim();
+  const worktreePath = join(dirname(repoRoot), `.orchestrator-${basename(repoRoot)}-${input.runId}-integration`);
+
+  if (await pathExists(worktreePath)) {
+    await ensureCleanWorktree(worktreePath);
+    await runCommand("git", ["reset", "--hard", input.baseRef], { cwd: worktreePath });
+    await runCommand("git", ["clean", "-fd"], { cwd: worktreePath });
+    return worktreePath;
+  }
+
+  await mkdir(dirname(worktreePath), { recursive: true });
+  await runCommand("git", ["worktree", "add", "--detach", worktreePath, input.baseRef], {
+    cwd: input.cwd,
+  });
+
+  return worktreePath;
+}
+
+async function ensureCleanWorktree(worktreePath: string): Promise<void> {
+  await runCommand("git", ["rev-parse", "--show-toplevel"], { cwd: worktreePath });
+  const status = await runCommand("git", ["status", "--porcelain"], { cwd: worktreePath });
+  if (status.trim()) {
+    throw new Error(
+      `Existing orchestrator integration worktree has uncommitted changes: ${worktreePath}`,
+    );
+  }
+}
+
+function getEffectivePublishMode(
+  config: OrchestratorConfig,
+  state: OrchestratorRunState,
+): OrchestratorPublishMode {
+  if (config.publishMode !== "single-pr") return config.publishMode;
+  return state.plan.sliceIssueNumbers.length > 1 ? "stacked-prs" : "single-pr";
+}
+
+async function buildStackBranches(input: {
+  cwd: string;
+  runId: string;
+  trunkBranch: string;
+  ordered: OrchestratorSliceState[];
+}): Promise<{ issueNumber: number; branch: string; base: string; title: string }[]> {
+  const stackBranches: { issueNumber: number; branch: string; base: string; title: string }[] = [];
+  let base = input.trunkBranch;
+  let baseRef = `origin/${input.trunkBranch}`;
+
+  for (const slice of input.ordered) {
+    const branch = `orchestrator/${input.runId}/stack/issue-${slice.issueNumber}`;
+    const commit = getCompletedSliceCommit(slice);
+
+    await runCommand("git", ["switch", "--force-create", branch, baseRef], { cwd: input.cwd });
+    await cherryPickSliceCommit({
+      cwd: input.cwd,
+      commit,
+      issueNumber: slice.issueNumber,
+      base,
+    });
+
+    stackBranches.push({ issueNumber: slice.issueNumber, branch, base, title: slice.title });
+    base = branch;
+    baseRef = branch;
+  }
+
+  return stackBranches;
+}
+
+function getCompletedSliceCommit(slice: OrchestratorSliceState): string {
+  const commits = slice.worker?.result?.status === "completed" ? slice.worker.result.commits : [];
+  if (commits.length !== 1) {
+    throw new Error(`Slice #${slice.issueNumber} must have exactly one commit`);
+  }
+
+  return commits[0] ?? "";
+}
+
+async function cherryPickSliceCommit(input: {
+  cwd: string;
+  commit: string;
+  issueNumber: number;
+  base: string;
+}): Promise<void> {
+  try {
+    await runCommand("git", ["cherry-pick", input.commit], { cwd: input.cwd });
+  } catch (error) {
+    const status = await runCommand("git", ["status", "--short"], { cwd: input.cwd }).catch(() => "");
+    throw new Error(
+      [
+        `Could not apply slice #${input.issueNumber} onto ${input.base}.`,
+        "The stack branch has been left in its conflicted state so an agent or human can resolve it.",
+        `Commit: ${input.commit}`,
+        status.trim() ? `Conflicts:\n${status.trim()}` : undefined,
+        error instanceof Error ? error.message : String(error),
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n\n"),
+    );
+  }
 }
 
 async function ensureStackedPullRequests(input: {

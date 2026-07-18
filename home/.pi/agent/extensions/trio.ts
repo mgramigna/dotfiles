@@ -29,7 +29,7 @@ const OVERSEER_COMPACT_TOOL_NAMES = ["overseer_request_review", "overseer_read_r
 const TRIO_DISALLOWED_TOOL_NAMES = new Set<string>(["overseer_review", "overseer_read_pane", ...OVERSEER_COMPACT_TOOL_NAMES]);
 const READ_ONLY_TOOL_NAMES = ["read", "bash", "grep", "find", "ls", "ffgrep", "fffind"];
 const EXECUTION_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls", "ffgrep", "fffind"];
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 type TrioPhase = "idle" | "planning" | "executing" | "reviewing" | "finalizing";
