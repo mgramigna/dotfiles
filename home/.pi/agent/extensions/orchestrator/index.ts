@@ -770,10 +770,17 @@ async function integrateRun(
   );
 
   for (const slice of ordered) {
+    const branch = getCompletedSliceBranch(slice);
     const commit = getCompletedSliceCommit(slice);
-    await cherryPickSliceCommit({
+    await ensureBranchContainsCommit({
       cwd: integrationWorktreePath,
+      branch,
       commit,
+      issueNumber: slice.issueNumber,
+    });
+    await mergeSliceBranch({
+      cwd: integrationWorktreePath,
+      branch,
       issueNumber: slice.issueNumber,
       base: integrationBranch,
     });
@@ -869,27 +876,39 @@ async function buildStackBranches(input: {
   ordered: OrchestratorSliceState[];
 }): Promise<{ issueNumber: number; branch: string; base: string; title: string }[]> {
   const stackBranches: { issueNumber: number; branch: string; base: string; title: string }[] = [];
+  const seenBranches = new Set<string>();
   let base = input.trunkBranch;
-  let baseRef = `origin/${input.trunkBranch}`;
 
   for (const slice of input.ordered) {
-    const branch = `orchestrator/${input.runId}/stack/issue-${slice.issueNumber}`;
+    const branch = getCompletedSliceBranch(slice);
     const commit = getCompletedSliceCommit(slice);
 
-    await runCommand("git", ["switch", "--force-create", branch, baseRef], { cwd: input.cwd });
-    await cherryPickSliceCommit({
+    if (seenBranches.has(branch)) {
+      throw new Error(`Multiple completed slices point at the same worker branch: ${branch}`);
+    }
+    seenBranches.add(branch);
+
+    await ensureBranchContainsCommit({
       cwd: input.cwd,
+      branch,
       commit,
       issueNumber: slice.issueNumber,
-      base,
     });
 
     stackBranches.push({ issueNumber: slice.issueNumber, branch, base, title: slice.title });
     base = branch;
-    baseRef = branch;
   }
 
   return stackBranches;
+}
+
+function getCompletedSliceBranch(slice: OrchestratorSliceState): string {
+  const branch = slice.worker?.branch;
+  if (!branch) {
+    throw new Error(`Slice #${slice.issueNumber} has no worker branch`);
+  }
+
+  return branch;
 }
 
 function getCompletedSliceCommit(slice: OrchestratorSliceState): string {
@@ -901,21 +920,50 @@ function getCompletedSliceCommit(slice: OrchestratorSliceState): string {
   return commits[0] ?? "";
 }
 
-async function cherryPickSliceCommit(input: {
+async function ensureBranchContainsCommit(input: {
   cwd: string;
+  branch: string;
   commit: string;
+  issueNumber: number;
+}): Promise<void> {
+  try {
+    await runCommand("git", ["rev-parse", "--verify", `${input.branch}^{commit}`], {
+      cwd: input.cwd,
+    });
+    await runCommand("git", ["rev-parse", "--verify", `${input.commit}^{commit}`], {
+      cwd: input.cwd,
+    });
+    await runCommand("git", ["merge-base", "--is-ancestor", input.commit, input.branch], {
+      cwd: input.cwd,
+    });
+  } catch (error) {
+    throw new Error(
+      [
+        `Completed slice #${input.issueNumber} is not available on its worker branch.`,
+        `Branch: ${input.branch}`,
+        `Commit: ${input.commit}`,
+        "The orchestrator no longer cherry-picks slice commits; the completed worker branch must contain the recorded result commit.",
+        error instanceof Error ? error.message : String(error),
+      ].join("\n\n"),
+    );
+  }
+}
+
+async function mergeSliceBranch(input: {
+  cwd: string;
+  branch: string;
   issueNumber: number;
   base: string;
 }): Promise<void> {
   try {
-    await runCommand("git", ["cherry-pick", input.commit], { cwd: input.cwd });
+    await runCommand("git", ["merge", "--no-ff", "--no-edit", input.branch], { cwd: input.cwd });
   } catch (error) {
     const status = await runCommand("git", ["status", "--short"], { cwd: input.cwd }).catch(() => "");
     throw new Error(
       [
-        `Could not apply slice #${input.issueNumber} onto ${input.base}.`,
-        "The stack branch has been left in its conflicted state so an agent or human can resolve it.",
-        `Commit: ${input.commit}`,
+        `Could not merge slice #${input.issueNumber} branch onto ${input.base}.`,
+        "The integration worktree has been left in its conflicted state so an agent or human can resolve it.",
+        `Branch: ${input.branch}`,
         status.trim() ? `Conflicts:\n${status.trim()}` : undefined,
         error instanceof Error ? error.message : String(error),
       ]
