@@ -161,12 +161,17 @@ async function syncReference(ref: ReferenceRepo) {
 		return `cloned ${ref.name} -> ${target}`;
 	}
 
-	await execFileFriendly("git", ["-C", target, "fetch", "--depth", "1", "origin"], `Couldn't fetch updates for reference #${ref.name} at ${target}.`);
-	const branch = ref.branch ?? "HEAD";
-	await execFileAsync("git", ["-C", target, "checkout", branch], { maxBuffer: 1024 * 1024 * 10 }).catch(
-		() => undefined,
-	);
-	await execFileFriendly("git", ["-C", target, "pull", "--ff-only"], `Couldn't update reference #${ref.name} at ${target}.`);
+	const fetchRef = ref.branch ?? "HEAD";
+	await execFileFriendly("git", ["-C", target, "fetch", "--depth", "1", "origin", fetchRef], `Couldn't fetch updates for reference #${ref.name} at ${target}.`);
+
+	// Reference repositories are read-only caches. Update them by resetting to the
+	// fetched commit instead of pulling, so locally divergent or detached shallow
+	// clones do not fail with "Not possible to fast-forward".
+	const checkoutArgs = ref.branch
+		? ["-C", target, "checkout", "--force", "-B", ref.branch, "FETCH_HEAD"]
+		: ["-C", target, "checkout", "--force", "--detach", "FETCH_HEAD"];
+	await execFileFriendly("git", checkoutArgs, `Couldn't check out updates for reference #${ref.name} at ${target}.`);
+	await execFileFriendly("git", ["-C", target, "reset", "--hard", "FETCH_HEAD"], `Couldn't reset reference #${ref.name} at ${target}.`);
 	return `updated ${ref.name} at ${target}`;
 }
 
