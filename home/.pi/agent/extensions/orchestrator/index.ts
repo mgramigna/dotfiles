@@ -869,37 +869,105 @@ function getEffectivePublishMode(
   return state.plan.sliceIssueNumbers.length > 1 ? "stacked-prs" : "single-pr";
 }
 
+type StackBranch = { issueNumber: number; branch: string; base: string; title: string };
+
 async function buildStackBranches(input: {
   cwd: string;
   runId: string;
   trunkBranch: string;
   ordered: OrchestratorSliceState[];
-}): Promise<{ issueNumber: number; branch: string; base: string; title: string }[]> {
-  const stackBranches: { issueNumber: number; branch: string; base: string; title: string }[] = [];
-  const seenBranches = new Set<string>();
-  let base = input.trunkBranch;
+}): Promise<StackBranch[]> {
+  const stackBranches: StackBranch[] = [];
+  const seenWorkerBranches = new Set<string>();
+  let baseRef = `origin/${input.trunkBranch}`;
+  let prBase = input.trunkBranch;
 
-  for (const slice of input.ordered) {
-    const branch = getCompletedSliceBranch(slice);
+  for (const [index, slice] of input.ordered.entries()) {
+    const workerBranch = getCompletedSliceBranch(slice);
     const commit = getCompletedSliceCommit(slice);
 
-    if (seenBranches.has(branch)) {
-      throw new Error(`Multiple completed slices point at the same worker branch: ${branch}`);
+    if (seenWorkerBranches.has(workerBranch)) {
+      throw new Error(`Multiple completed slices point at the same worker branch: ${workerBranch}`);
     }
-    seenBranches.add(branch);
+    seenWorkerBranches.add(workerBranch);
 
     await ensureBranchContainsCommit({
       cwd: input.cwd,
-      branch,
+      branch: workerBranch,
       commit,
       issueNumber: slice.issueNumber,
     });
 
-    stackBranches.push({ issueNumber: slice.issueNumber, branch, base, title: slice.title });
-    base = branch;
+    const branch = getIntegrationStackBranch(input.runId, index, slice);
+    await runCommand("git", ["switch", "--force-create", branch, baseRef], { cwd: input.cwd });
+    await cherryPickSliceCommit({
+      cwd: input.cwd,
+      issueNumber: slice.issueNumber,
+      commit,
+      workerBranch,
+      baseRef,
+    });
+
+    stackBranches.push({ issueNumber: slice.issueNumber, branch, base: prBase, title: slice.title });
+    baseRef = branch;
+    prBase = branch;
   }
 
   return stackBranches;
+}
+
+function getIntegrationStackBranch(
+  runId: string,
+  index: number,
+  slice: OrchestratorSliceState,
+): string {
+  const ordinal = String(index + 1).padStart(2, "0");
+  const slug = slugifyBranchComponent(slice.title).slice(0, 40).replace(/-+$/g, "");
+  return ["orchestrator", runId, `${ordinal}-${slice.issueNumber}${slug ? `-${slug}` : ""}`].join("/");
+}
+
+function slugifyBranchComponent(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "slice";
+}
+
+async function cherryPickSliceCommit(input: {
+  cwd: string;
+  issueNumber: number;
+  commit: string;
+  workerBranch: string;
+  baseRef: string;
+}): Promise<void> {
+  try {
+    await runCommand("git", ["merge-base", "--is-ancestor", input.commit, "HEAD"], {
+      cwd: input.cwd,
+    });
+    return;
+  } catch {
+    // The slice commit is not already present in the synthetic stack tip.
+  }
+
+  try {
+    await runCommand("git", ["cherry-pick", "--no-gpg-sign", input.commit], { cwd: input.cwd });
+  } catch (error) {
+    const status = await runCommand("git", ["status", "--short"], { cwd: input.cwd }).catch(() => "");
+    await runCommand("git", ["cherry-pick", "--abort"], { cwd: input.cwd }).catch(() => undefined);
+    throw new Error(
+      [
+        `Could not apply completed slice #${input.issueNumber} onto the synthetic stack.`,
+        "No stacked PR was created for this failed integration attempt; rerunning /orchestrate integrate starts from a clean integration worktree.",
+        `Worker branch: ${input.workerBranch}`,
+        `Commit: ${input.commit}`,
+        `Stack base: ${input.baseRef}`,
+        status.trim() ? `Conflicts:\n${status.trim()}` : undefined,
+        error instanceof Error ? error.message : String(error),
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n\n"),
+    );
+  }
 }
 
 function getCompletedSliceBranch(slice: OrchestratorSliceState): string {
@@ -927,22 +995,26 @@ async function ensureBranchContainsCommit(input: {
   issueNumber: number;
 }): Promise<void> {
   try {
-    await runCommand("git", ["rev-parse", "--verify", `${input.branch}^{commit}`], {
-      cwd: input.cwd,
-    });
-    await runCommand("git", ["rev-parse", "--verify", `${input.commit}^{commit}`], {
-      cwd: input.cwd,
-    });
-    await runCommand("git", ["merge-base", "--is-ancestor", input.commit, input.branch], {
-      cwd: input.cwd,
-    });
+    const branchTip = (
+      await runCommand("git", ["rev-parse", "--verify", `${input.branch}^{commit}`], {
+        cwd: input.cwd,
+      })
+    ).trim();
+    const commit = (
+      await runCommand("git", ["rev-parse", "--verify", `${input.commit}^{commit}`], {
+        cwd: input.cwd,
+      })
+    ).trim();
+    if (branchTip !== commit) {
+      throw new Error(`Recorded result commit is not the worker branch tip (${branchTip})`);
+    }
   } catch (error) {
     throw new Error(
       [
         `Completed slice #${input.issueNumber} is not available on its worker branch.`,
         `Branch: ${input.branch}`,
         `Commit: ${input.commit}`,
-        "The orchestrator no longer cherry-picks slice commits; the completed worker branch must contain the recorded result commit.",
+        "The completed worker branch tip must exactly match the recorded result commit; rerun/check the worker if the branch has moved.",
         error instanceof Error ? error.message : String(error),
       ].join("\n\n"),
     );
@@ -977,7 +1049,7 @@ async function ensureStackedPullRequests(input: {
   cwd: string;
   parentIssueNumber: number;
   state: OrchestratorRunState;
-  branches: { issueNumber: number; branch: string; base: string; title: string }[];
+  branches: StackBranch[];
 }): Promise<{ issueNumber: number; number: number; url: string }[]> {
   for (const branch of input.branches) {
     await runCommand("git", ["push", "--force-with-lease", "-u", "origin", branch.branch], {
@@ -989,6 +1061,7 @@ async function ensureStackedPullRequests(input: {
   for (const branch of input.branches) {
     const existing = await findPullRequest(input.cwd, branch.branch);
     if (existing) {
+      await ensurePullRequestBase(input.cwd, branch.branch, branch.base);
       prs.push({ issueNumber: branch.issueNumber, ...existing });
       continue;
     }
@@ -1029,8 +1102,21 @@ async function ensureStackedPullRequests(input: {
     prs.push({ issueNumber: branch.issueNumber, number, url });
   }
 
-  await runCommand("stack", ["sync", "--apply"], { cwd: input.cwd });
+  await syncStackMetadata(input.cwd).catch(() => undefined);
   return prs;
+}
+
+async function ensurePullRequestBase(cwd: string, branch: string, base: string): Promise<void> {
+  await runCommand("gh", ["pr", "edit", branch, "--base", base], { cwd });
+}
+
+async function syncStackMetadata(cwd: string): Promise<void> {
+  try {
+    await runCommand("stack", ["sync", "--apply", "--keep-going"], { cwd });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`stack sync failed after stacked PR creation; branches and PRs were already created.\n${message}`);
+  }
 }
 
 async function ensureFinalPullRequest(input: {
