@@ -124,6 +124,7 @@ return {
 				"tailwindcss",
 				"texlab",
 				"vtsls",
+				"tsgo",
 				"oxlint",
 			})
 		end,
