@@ -85,6 +85,7 @@ backup_target "$HOME/.config/tmux"
 backup_target "$HOME/.config/starship"
 backup_target "$HOME/.config/herdr"
 backup_target "$HOME/.local/scripts"
+backup_target "$HOME/.pi/agent/prompts"
 
 log_step "Stowing home dotfiles"
 stow --dir "$STOW_DIR" --target "$HOME" --restow "${PACKAGES[@]}"
