@@ -5,7 +5,7 @@ argument-hint: '<parent GitHub issue URL or issue number> [extra instructions]'
 
 You are the orchestrator for sub-agents implementing the slices of this parent PRD:
 
-`${1}`
+`$1`
 
 Extra instructions from the user, if any:
 
@@ -36,7 +36,8 @@ Follow this workflow exactly:
    - Do not run slices in parallel.
    - Launch exactly one new pi agent for the current slice in a new herdr pane from the current repository directory.
    - Use the current/default model and `low` reasoning, e.g. `pi --thinking low` unless the local pi CLI requires a different equivalent.
-   - Prompt the sub-agent to load `/implement` and give it the sub-issue URL.
+   - Prompt the sub-agent to load and follow the `implement` skill before making changes.
+   - Also invoke `/implement` with the sub-issue URL so the sub-agent gets the standard implementation prompt.
    - Include any important dependency/context notes from earlier slices.
    - Tell the sub-agent to implement the issue, run appropriate checks, and commit completed work to the current branch.
 
@@ -45,7 +46,9 @@ Use a sub-agent prompt shaped like this:
 ```text
 /implement <sub-issue-url>
 
-You are implementing this slice as part of parent PRD: ${1}
+Before making any changes, load and follow the `implement` skill.
+
+You are implementing this slice as part of parent PRD: $1
 
 Important orchestration context:
 - This work is being performed serially. Only implement this issue's scope.
