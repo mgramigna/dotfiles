@@ -8,18 +8,26 @@ import type { AutocompleteItem } from "@earendil-works/pi-tui";
 const STATUS_KEY = "swear-jar";
 const AGENT_DIR = join(homedir(), ".pi", "agent");
 const STATE_PATH = join(AGENT_DIR, "swear-jar.json");
+const PATTERNS_PATH = join(AGENT_DIR, "swear-jar-patterns.txt");
 const SESSIONS_DIR = join(AGENT_DIR, "sessions");
 
-const SWEAR_PATTERNS: RegExp[] = [
-	/\b(?:fuck(?:er|ers|ing|ed|s)?|fucking)\b/gi,
-	/\b(?:shit(?:ty|ting|ted|s)?|bullshit|batshit|horseshit)\b/gi,
-	/\b(?:asshole|assholes|jackass|jackasses|dumbass|dumbasses|badass|badasses)\b/gi,
-	/\b(?:bitch(?:es|ing|ed|y)?|bastard|bastards)\b/gi,
-	/\b(?:damn(?:ed|ing|s)?|goddamn(?:ed|it)?)\b/gi,
-	/\b(?:crap|crappy|hell|piss(?:ed|ing|es)?)\b/gi,
-	/\b(?:dick(?:head|heads|s)?|prick|pricks|cock(?:s)?)\b/gi,
-	/\b(?:cunt|cunts|twat|twats)\b/gi,
+const DEFAULT_PATTERNS_ROT13 = [
+	"/\\o(?:shpx(?:re|ref|vat|rq|f)?|shpxvat)\\o/tv",
+	"/\\o(?:fuvg(?:gl|gvat|grq|f)?|ohyyfuvg|ongfuvg|ubefrfuvg)\\o/tv",
+	"/\\o(?:nffubyr|nffubyrf|wnpxnff|wnpxnffrf|qhzoff|qhzoffrf|onqnff|onqnffrf)\\o/tv",
+	"/\\o(?:ovgpu(?:rf|vat|rq|l)?|onfgneq|onfgneqf)\\o/tv",
+	"/\\o(?:qnza(?:rq|vat|f)?|tbqqnza(?:rq|vg)?)\\o/tv",
+	"/\\o(?:penc|penccl|uryy|cvff(?:rq|vat|rf)?)\\o/tv",
+	"/\\o(?:qvpx(?:urnq|urnqf|f)?|cevpx|cevpxf|pbpx(?:f)?)\\o/tv",
+	"/\\o(?:phag|phagf|gjng|gjngf)\\o/tv",
 ];
+
+const DEFAULT_PATTERNS_HEADER = `# Swear jar patterns, one JavaScript regex literal per line.
+# This file is created locally by the extension and is intentionally gitignored.
+# Edit it to customize what gets counted.
+`;
+
+let swearPatternsPromise: Promise<RegExp[]> | undefined;
 
 interface SwearJarState {
 	total: number;
@@ -43,9 +51,49 @@ const COMMAND_COMPLETIONS: AutocompleteItem[] = [
 	{ value: "reset", label: "reset", description: "Reset the swear jar count to zero" },
 ];
 
-function countSwears(text: string): number {
+function rot13(text: string): string {
+	return text.replace(/[a-z]/gi, (char) => {
+		const base = char >= "a" && char <= "z" ? 97 : 65;
+		return String.fromCharCode(((char.charCodeAt(0) - base + 13) % 26) + base);
+	});
+}
+
+function parseRegexLiteral(line: string): RegExp | undefined {
+	const trimmed = line.trim();
+	if (!trimmed || trimmed.startsWith("#")) return undefined;
+
+	const match = trimmed.match(/^\/(.*)\/([a-z]*)$/i);
+	if (!match) return new RegExp(`\\b${trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+
+	const flags = match[2].includes("g") ? match[2] : `${match[2]}g`;
+	return new RegExp(match[1], flags);
+}
+
+async function ensurePatternsFile(): Promise<void> {
+	try {
+		await stat(PATTERNS_PATH);
+		return;
+	} catch {
+		await mkdir(dirname(PATTERNS_PATH), { recursive: true });
+		await writeFile(PATTERNS_PATH, `${DEFAULT_PATTERNS_HEADER}${DEFAULT_PATTERNS_ROT13.map(rot13).join("\n")}\n`, "utf8");
+	}
+}
+
+async function loadSwearPatterns(): Promise<RegExp[]> {
+	await ensurePatternsFile();
+	const raw = await readFile(PATTERNS_PATH, "utf8");
+	return raw.split("\n").map(parseRegexLiteral).filter((pattern): pattern is RegExp => Boolean(pattern));
+}
+
+async function getSwearPatterns(): Promise<RegExp[]> {
+	swearPatternsPromise ??= loadSwearPatterns();
+	return swearPatternsPromise;
+}
+
+async function countSwears(text: string): Promise<number> {
 	let total = 0;
-	for (const pattern of SWEAR_PATTERNS) {
+	for (const pattern of await getSwearPatterns()) {
+		pattern.lastIndex = 0;
 		const matches = text.match(pattern);
 		if (matches) total += matches.length;
 	}
@@ -116,7 +164,7 @@ async function findHistoricalSwears(): Promise<SwearOccurrence[]> {
 				if (entry.type !== "message" || entry.message?.role !== "user" || !entry.id) continue;
 
 				const text = extractText(entry.message.content);
-				const count = countSwears(text);
+				const count = await countSwears(text);
 				if (count > 0) {
 					occurrences.push({
 						sessionFile: file,
@@ -240,8 +288,8 @@ export default function (pi: ExtensionAPI) {
 		// Do not block pi startup on disk I/O. Keep the status hidden until a new swear
 		// is detected so the counter is not constantly in view.
 		clearStatus(ctx);
-		void loadState()
-			.then((loadedState) => {
+		void Promise.all([loadState(), getSwearPatterns()])
+			.then(([loadedState]) => {
 				state = loadedState;
 			})
 			.catch((error: unknown) => logBackgroundError("load", error));
@@ -250,7 +298,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("input", async (event, ctx) => {
 		if (event.source === "extension") return { action: "continue" as const };
 
-		const swears = countSwears(event.text);
+		const swears = await countSwears(event.text);
 		if (swears > 0) {
 			state.total += swears;
 			showStatusTemporarily(ctx, state.total);
