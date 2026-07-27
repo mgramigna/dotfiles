@@ -29,9 +29,11 @@ const OVERSEER_COMPACT_TOOL_NAMES = ["overseer_request_review", "overseer_read_r
 const TRIO_DISALLOWED_TOOL_NAMES = new Set<string>(["overseer_review", "overseer_read_pane", ...OVERSEER_COMPACT_TOOL_NAMES]);
 const READ_ONLY_TOOL_NAMES = ["read", "bash", "grep", "find", "ls", "ffgrep", "fffind"];
 const EXECUTION_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls", "ffgrep", "fffind"];
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const CONFIG_THINKING_LEVELS = [...THINKING_LEVELS, "max"] as const;
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+type ConfigThinkingLevel = (typeof CONFIG_THINKING_LEVELS)[number];
 type TrioPhase = "idle" | "planning" | "executing" | "reviewing" | "finalizing";
 
 interface TrioRoleConfig {
@@ -77,15 +79,16 @@ function readRoleConfig(value: unknown, fallback: TrioRoleConfig | undefined, la
 
 	if (typeof provider !== "string" || !provider.trim()) throw new Error(`${label}.provider must be a non-empty string`);
 	if (typeof model !== "string" || !model.trim()) throw new Error(`${label}.model must be a non-empty string`);
-	if (thinkingLevel !== undefined && (typeof thinkingLevel !== "string" || !THINKING_LEVELS.includes(thinkingLevel as ThinkingLevel))) {
-		throw new Error(`${label}.thinkingLevel must be one of ${THINKING_LEVELS.join(", ")}`);
+	if (thinkingLevel !== undefined && (typeof thinkingLevel !== "string" || !CONFIG_THINKING_LEVELS.includes(thinkingLevel as ConfigThinkingLevel))) {
+		throw new Error(`${label}.thinkingLevel must be one of ${CONFIG_THINKING_LEVELS.join(", ")}`);
 	}
+	const normalizedThinkingLevel = thinkingLevel === "max" ? "xhigh" : thinkingLevel;
 	if (systemPrompt !== undefined && typeof systemPrompt !== "string") throw new Error(`${label}.systemPrompt must be a string`);
 
 	return {
 		provider: provider.trim(),
 		model: model.trim(),
-		...(thinkingLevel === undefined ? {} : { thinkingLevel: thinkingLevel as ThinkingLevel }),
+		...(normalizedThinkingLevel === undefined ? {} : { thinkingLevel: normalizedThinkingLevel as ThinkingLevel }),
 		...(systemPrompt === undefined ? {} : { systemPrompt }),
 	};
 }
