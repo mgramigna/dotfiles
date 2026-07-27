@@ -123,7 +123,6 @@ return {
 				"rust_analyzer",
 				"tailwindcss",
 				"texlab",
-				"vtsls",
 				"tsgo",
 				"oxlint",
 			})

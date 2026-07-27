@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import {
@@ -7,34 +8,18 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { autocompleteSelect } from "../shared/autocomplete-select";
 
 const CONFIG_FILE_NAME = "trio.json";
-const TRIO_STATE_ENTRY = "trio-workflow";
-const MAX_REVIEW_ROUNDS = 5;
-
-const TRANSITION_TOOLS = {
-	delegate: "trio_delegate_to_executor",
-	submit: "trio_submit_for_review",
-	revise: "trio_request_changes",
-	approve: "trio_approve",
-} as const;
-
-const TRANSITION_TOOL_NAMES = new Set<string>(Object.values(TRANSITION_TOOLS));
-const OVERSEER_COMPACT_TOOL_NAMES = ["overseer_request_review", "overseer_read_review"];
-const TRIO_DISALLOWED_TOOL_NAMES = new Set<string>(["overseer_review", "overseer_read_pane", ...OVERSEER_COMPACT_TOOL_NAMES]);
-const READ_ONLY_TOOL_NAMES = ["read", "bash", "grep", "find", "ls", "ffgrep", "fffind"];
-const EXECUTION_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls", "ffgrep", "fffind"];
+const EXECUTOR_TOOL = "trio_delegate_to_executor";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const CONFIG_THINKING_LEVELS = [...THINKING_LEVELS, "max"] as const;
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 type ConfigThinkingLevel = (typeof CONFIG_THINKING_LEVELS)[number];
-type TrioPhase = "idle" | "planning" | "executing" | "reviewing" | "finalizing";
 
 interface TrioRoleConfig {
 	provider: string;
@@ -46,23 +31,6 @@ interface TrioRoleConfig {
 interface TrioConfig {
 	planner: TrioRoleConfig;
 	executor: TrioRoleConfig;
-	reviewer: TrioRoleConfig;
-	maxReviewRounds?: number;
-}
-
-interface OriginalSessionState {
-	model?: { provider: string; model: string };
-	thinkingLevel: ThinkingLevel;
-	tools: string[];
-}
-
-interface TrioWorkflowState {
-	version: 1;
-	active: boolean;
-	phase: TrioPhase;
-	task: string;
-	reviewRound: number;
-	original: OriginalSessionState;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,28 +50,21 @@ function readRoleConfig(value: unknown, fallback: TrioRoleConfig | undefined, la
 	if (thinkingLevel !== undefined && (typeof thinkingLevel !== "string" || !CONFIG_THINKING_LEVELS.includes(thinkingLevel as ConfigThinkingLevel))) {
 		throw new Error(`${label}.thinkingLevel must be one of ${CONFIG_THINKING_LEVELS.join(", ")}`);
 	}
-	const normalizedThinkingLevel = thinkingLevel === "max" ? "xhigh" : thinkingLevel;
 	if (systemPrompt !== undefined && typeof systemPrompt !== "string") throw new Error(`${label}.systemPrompt must be a string`);
 
 	return {
 		provider: provider.trim(),
 		model: model.trim(),
-		...(normalizedThinkingLevel === undefined ? {} : { thinkingLevel: normalizedThinkingLevel as ThinkingLevel }),
+		...(thinkingLevel === undefined ? {} : { thinkingLevel: (thinkingLevel === "max" ? "xhigh" : thinkingLevel) as ThinkingLevel }),
 		...(systemPrompt === undefined ? {} : { systemPrompt }),
 	};
 }
 
 function mergeTrioConfig(base: TrioConfig | undefined, value: unknown, source: string): TrioConfig {
 	if (!isRecord(value)) throw new Error(`${source} must contain a JSON object`);
-	const maxReviewRounds = value.maxReviewRounds ?? base?.maxReviewRounds;
-	if (maxReviewRounds !== undefined && (!Number.isInteger(maxReviewRounds) || (maxReviewRounds as number) < 0 || (maxReviewRounds as number) > 20)) {
-		throw new Error(`${source}.maxReviewRounds must be an integer between 0 and 20`);
-	}
 	return {
 		planner: readRoleConfig(value.planner, base?.planner, `${source}.planner`),
 		executor: readRoleConfig(value.executor, base?.executor, `${source}.executor`),
-		reviewer: readRoleConfig(value.reviewer, base?.reviewer, `${source}.reviewer`),
-		...(maxReviewRounds === undefined ? {} : { maxReviewRounds: maxReviewRounds as number }),
 	};
 }
 
@@ -120,7 +81,6 @@ function loadConfig(ctx: ExtensionContext): { config: TrioConfig | undefined; pa
 	const paths: string[] = [];
 	const globalPath = join(getAgentDir(), CONFIG_FILE_NAME);
 	const projectPath = join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE_NAME);
-
 	if (existsSync(globalPath)) {
 		config = mergeTrioConfig(undefined, readJsonFile(globalPath), globalPath);
 		paths.push(globalPath);
@@ -136,83 +96,58 @@ function modelKey(model: Model<any>): string {
 	return `${model.provider}/${model.id}`;
 }
 
-function phaseLabel(phase: TrioPhase): string {
-	return phase;
+function plannerInstructions(task: string, config: TrioConfig): string {
+	const base = `You are the Trio planner. Plan the user's work, then delegate implementation to the executor by calling ${EXECUTOR_TOOL}.
+
+When the executor finishes, inspect its transcript and the working tree. If the result is acceptable, create a git commit yourself using a Conventional Commits message. If it is not acceptable, delegate a focused follow-up to the executor. Do not claim completion until the commit has been created.
+
+Original task:\n${task}`;
+	return config.planner.systemPrompt?.trim() ? `${base}\n\n[TRIO PLANNER SYSTEM PROMPT]\n${config.planner.systemPrompt.trim()}` : base;
 }
 
-function formatKickoffMessage(task: string): string {
-	return `Trio workflow started\n\nTask:\n${task}`;
+function executorPrompt(task: string, plan: string, config: TrioConfig): string {
+	const extra = config.executor.systemPrompt?.trim() ? `\n\n[TRIO EXECUTOR SYSTEM PROMPT]\n${config.executor.systemPrompt.trim()}` : "";
+	return `/impl-review\n\nYou are the Trio executor. Implement the planner's delegated task in this working tree. Run relevant validation. Because this prompt is /impl-review, perform the implementation-review workflow, including the overseer review tool, before you finish. Do not commit; the planner will inspect and commit after you return.\n\nTask:\n${task}\n\nPlanner instructions:\n${plan}${extra}`;
 }
 
-function uniqueAvailable(names: string[], availableTools: Set<string>): string[] {
-	return [...new Set(names)].filter((name) => availableTools.has(name));
+function runHerdr(args: string[], input?: string): string {
+	return execFileSync("herdr", args, { encoding: "utf8", input });
 }
 
-function getToolsForPhase(phase: TrioPhase, originalTools: string[], availableToolNames: string[]): string[] {
-	const availableTools = new Set(availableToolNames);
-	const originalWithoutTransitions = originalTools.filter((name) => !TRANSITION_TOOL_NAMES.has(name) && !TRIO_DISALLOWED_TOOL_NAMES.has(name));
-	if (phase === "idle") return uniqueAvailable(originalWithoutTransitions, availableTools);
-	if (phase === "executing") return uniqueAvailable([...originalWithoutTransitions, ...EXECUTION_TOOL_NAMES, TRANSITION_TOOLS.submit], availableTools);
-	const readOnlyBase = originalWithoutTransitions.filter((name) => name !== "edit" && name !== "write");
-	if (phase === "planning") return uniqueAvailable([...readOnlyBase, ...READ_ONLY_TOOL_NAMES, TRANSITION_TOOLS.delegate], availableTools);
-	if (phase === "reviewing") return uniqueAvailable([...readOnlyBase, ...READ_ONLY_TOOL_NAMES, ...OVERSEER_COMPACT_TOOL_NAMES, TRANSITION_TOOLS.revise, TRANSITION_TOOLS.approve], availableTools);
-	return uniqueAvailable([...readOnlyBase, ...READ_ONLY_TOOL_NAMES], availableTools);
+function parsePaneId(json: string): string {
+	const parsed = JSON.parse(json) as { result?: { pane?: { pane_id?: string } } };
+	const paneId = parsed.result?.pane?.pane_id;
+	if (!paneId) throw new Error("Could not read new Herdr pane id");
+	return paneId;
 }
 
-function appendRoleSystemPrompt(instructions: string, systemPrompt = ""): string {
-	return systemPrompt.trim() ? `${instructions}\n\n[TRIO ROLE SYSTEM PROMPT]\n${systemPrompt.trim()}` : instructions;
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function getPhaseInstructions(state: TrioWorkflowState, config: TrioConfig): string | undefined {
-	if (!state.active) return undefined;
-	if (state.phase === "planning") {
-		return appendRoleSystemPrompt(`[TRIO PHASE: PLANNING]\nYou are the planner and orchestrator. Understand the request, inspect the codebase as needed, and produce a concrete implementation plan for the executor.\nDo not edit files. When the plan is ready, call ${TRANSITION_TOOLS.delegate} with the task, ordered plan, acceptance criteria, and relevant files.\nThe transition tool must be the only tool call in that response. Do not give the user a final answer instead of delegating.\n\nOriginal task:\n${state.task}`, config.planner.systemPrompt);
-	}
-	if (state.phase === "executing") {
-		return appendRoleSystemPrompt(`[TRIO PHASE: EXECUTION]\nYou are the executor. Implement the delegated plan in the current working tree, using the conversation and tool results as shared context.\nRun relevant tests or checks. When implementation is complete or blocked, call ${TRANSITION_TOOLS.submit} with a factual summary, tests run, and unresolved issues.\nThe transition tool must be the only tool call in that response. Do not provide the final user-facing answer.`, config.executor.systemPrompt);
-	}
-	if (state.phase === "reviewing") {
-		const round = `${state.reviewRound}/${config.maxReviewRounds ?? MAX_REVIEW_ROUNDS}`;
-		return appendRoleSystemPrompt(`[TRIO PHASE: REVIEW — round ${round}]\nYou are the reviewer. Use the compact overseer workflow for the primary code review so the main context stays small.\nFirst call overseer_request_review for the current diff. Do not use overseer_review or overseer_read_pane.\nInterpret the overseer decision as follows:\n- request_changes: inspect the artifact with overseer_read_review only as needed, then call ${TRANSITION_TOOLS.revise} with concrete required changes.\n- non_blocking_comments: decide whether any comment requires another executor pass. If not, call ${TRANSITION_TOOLS.approve} and record the comments as remaining concerns.\n- approve: treat this only as approval of diff-level correctness; still verify the implementation satisfies the original task, acceptance criteria, executor summary, and validation evidence before calling ${TRANSITION_TOOLS.approve}.\nYou may use read-only tools to verify or clarify overseer results, task fit, and validation evidence, but do not edit files yourself.\nThe final transition tool (${TRANSITION_TOOLS.revise} or ${TRANSITION_TOOLS.approve}) must be the only tool call in that response.`, config.reviewer.systemPrompt);
-	}
-	if (state.phase === "finalizing") {
-		return appendRoleSystemPrompt(`[TRIO PHASE: FINAL RESPONSE]\nThe implementation has been reviewed and approved. Give the user the final concise summary, including changes made, validation run, and any remaining caveats.\nDo not call additional Trio transition tools.`, config.planner.systemPrompt);
-	}
-	return undefined;
-}
-
-function parsePersistedState(value: unknown): TrioWorkflowState | undefined {
-	if (!isRecord(value) || value.version !== 1 || typeof value.active !== "boolean" || typeof value.task !== "string") return undefined;
-	if (!["idle", "planning", "executing", "reviewing", "finalizing"].includes(String(value.phase))) return undefined;
-	if (!Number.isInteger(value.reviewRound) || (value.reviewRound as number) < 0) return undefined;
-	if (!isRecord(value.original) || !Array.isArray(value.original.tools) || !value.original.tools.every((tool) => typeof tool === "string")) return undefined;
-	const thinkingLevel = value.original.thinkingLevel;
-	if (typeof thinkingLevel !== "string" || !THINKING_LEVELS.includes(thinkingLevel as ThinkingLevel)) return undefined;
-	let model: { provider: string; model: string } | undefined;
-	if (value.original.model !== undefined) {
-		if (!isRecord(value.original.model) || typeof value.original.model.provider !== "string" || typeof value.original.model.model !== "string") return undefined;
-		model = { provider: value.original.model.provider, model: value.original.model.model };
-	}
-	return { version: 1, active: value.active, phase: value.phase as TrioPhase, task: value.task, reviewRound: value.reviewRound as number, original: { model, thinkingLevel: thinkingLevel as ThinkingLevel, tools: [...value.original.tools] } };
-}
-
-function readLatestWorkflowState(entries: Array<{ type?: string; customType?: string; data?: unknown }>): TrioWorkflowState | undefined {
-	let latest: TrioWorkflowState | undefined;
-	for (const entry of entries) {
-		if (entry.type !== "custom" || entry.customType !== TRIO_STATE_ENTRY) continue;
-		const parsed = parsePersistedState(entry.data);
-		if (parsed) latest = parsed;
-	}
-	return latest;
+async function runExecutorInHerdr(task: string, plan: string, config: TrioConfig, ctx: ExtensionContext): Promise<string> {
+	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Trio executor requires running inside herdr (HERDR_ENV=1)");
+	const paneId = parsePaneId(runHerdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
+	const modelArg = `${config.executor.provider}/${config.executor.model}${config.executor.thinkingLevel ? `:${config.executor.thinkingLevel}` : ""}`;
+	const command = [
+		"pi",
+		"--provider", config.executor.provider,
+		"--model", modelArg,
+		"--name", "trio executor",
+		executorPrompt(task, plan, config),
+	].map(shellQuote).join(" ");
+	runHerdr(["pane", "run", paneId, command]);
+	runHerdr(["wait", "agent-status", paneId, "--status", "done", "--timeout", "1200000"]);
+	const transcript = runHerdr(["pane", "read", paneId, "--source", "recent-unwrapped", "--lines", "240"]);
+	ctx.ui.notify(`Trio executor finished in pane ${paneId}.`, "info");
+	return transcript;
 }
 
 export default function trioExtension(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer("trio-kickoff", (message, _options, theme) => {
 		const content = typeof message.content === "string" ? message.content : String(message.content ?? "");
-		const [title = "Trio workflow started", ...rest] = content.split("\n");
-		const body = rest.join("\n").trim();
-		const header = `${theme.fg("accent", "◆")} ${theme.fg("accent", theme.bold(title))}`;
-		const text = body ? `${header}\n${theme.fg("muted", body)}` : header;
+		const header = `${theme.fg("accent", "◆")} ${theme.fg("accent", theme.bold("Trio planner started"))}`;
+		const text = content.trim() ? `${header}\n${theme.fg("muted", content.trim())}` : header;
 		const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
 		box.addChild(new Text(text, 0, 0));
 		return box;
@@ -220,13 +155,28 @@ export default function trioExtension(pi: ExtensionAPI): void {
 
 	let config: TrioConfig | undefined;
 	let configPaths: string[] = [];
-	let state: TrioWorkflowState | undefined;
+	let task: string | undefined;
 	let toolsRegistered = false;
-	let announcedPhaseKey: string | undefined;
+	let originalTools: string[] | undefined;
 
 	function requireConfig(): TrioConfig {
 		if (!config) throw new Error("Trio is not configured. Run /trio setup.");
 		return config;
+	}
+
+	function resolveRole(ctx: ExtensionContext, role: TrioRoleConfig): Model<any> {
+		const model = ctx.modelRegistry.find(role.provider, role.model);
+		if (!model) throw new Error(`Configured Trio model not found: ${role.provider}/${role.model}`);
+		return model;
+	}
+
+	async function selectRole(ctx: ExtensionContext, role: TrioRoleConfig): Promise<void> {
+		const model = resolveRole(ctx, role);
+		if (ctx.model?.provider !== model.provider || ctx.model.id !== model.id) {
+			const selected = await pi.setModel(model);
+			if (!selected) throw new Error(`No credentials available for ${role.provider}/${role.model}`);
+		}
+		if (role.thinkingLevel !== undefined) pi.setThinkingLevel(role.thinkingLevel);
 	}
 
 	async function runOnboarding(ctx: ExtensionContext): Promise<TrioConfig | undefined> {
@@ -236,24 +186,36 @@ export default function trioExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify("No authenticated models are available. Configure a model with /login first.", "error");
 			return undefined;
 		}
-		async function choose(title: string): Promise<Model<any> | undefined> {
-			const selected = await autocompleteSelect(ctx, {
-				title,
-				items: models.map((m: Model<any>) => ({ label: modelKey(m), value: modelKey(m), description: m.name })),
-			});
+		async function chooseModel(title: string): Promise<Model<any> | undefined> {
+			const selected = await autocompleteSelect(ctx, { title, items: models.map((m: Model<any>) => ({ label: modelKey(m), value: modelKey(m), description: m.name })) });
 			if (!selected) return undefined;
 			const [provider, ...modelParts] = selected.split("/");
 			return ctx.modelRegistry.find(provider!, modelParts.join("/"));
 		}
-		const planner = await choose("Trio setup: choose the planner model");
+		async function chooseThinkingLevel(title: string): Promise<ThinkingLevel | undefined | "cancelled"> {
+			const selected = await autocompleteSelect(ctx, {
+				title,
+				items: [
+					{ label: "Use pi default", value: "default", description: "Do not set a Trio-specific reasoning level" },
+					...CONFIG_THINKING_LEVELS.map((level) => ({ label: level, value: level, description: level === "max" ? "Alias for xhigh" : undefined })),
+				],
+			});
+			if (!selected) return "cancelled";
+			if (selected === "default") return undefined;
+			return (selected === "max" ? "xhigh" : selected) as ThinkingLevel;
+		}
+		const planner = await chooseModel("Trio setup: choose the planner model");
 		if (!planner) return undefined;
-		const executor = await choose("Trio setup: choose the executor model");
+		const plannerThinkingLevel = await chooseThinkingLevel("Trio setup: choose the planner reasoning level");
+		if (plannerThinkingLevel === "cancelled") return undefined;
+		const executor = await chooseModel("Trio setup: choose the executor model");
 		if (!executor) return undefined;
-		const reviewerChoice = await autocompleteSelect(ctx, { title: "Trio setup: choose the reviewer", items: [{ label: `Use planner as reviewer (${modelKey(planner)})`, value: "planner" }, { label: "Select a custom reviewer model", value: "custom" }] });
-		if (!reviewerChoice) return undefined;
-		const reviewer = reviewerChoice === "custom" ? await choose("Trio setup: choose the reviewer model") : planner;
-		if (!reviewer) return undefined;
-		const selectedConfig: TrioConfig = { planner: { provider: planner.provider, model: planner.id }, executor: { provider: executor.provider, model: executor.id }, reviewer: { provider: reviewer.provider, model: reviewer.id }, maxReviewRounds: MAX_REVIEW_ROUNDS };
+		const executorThinkingLevel = await chooseThinkingLevel("Trio setup: choose the executor reasoning level");
+		if (executorThinkingLevel === "cancelled") return undefined;
+		const selectedConfig: TrioConfig = {
+			planner: { provider: planner.provider, model: planner.id, ...(plannerThinkingLevel === undefined ? {} : { thinkingLevel: plannerThinkingLevel }) },
+			executor: { provider: executor.provider, model: executor.id, ...(executorThinkingLevel === undefined ? {} : { thinkingLevel: executorThinkingLevel }) },
+		};
 		mkdirSync(getAgentDir(), { recursive: true });
 		writeFileSync(configPath, `${JSON.stringify(selectedConfig, null, "\t")}\n`, "utf8");
 		config = selectedConfig;
@@ -269,265 +231,76 @@ export default function trioExtension(pi: ExtensionAPI): void {
 		return config ?? runOnboarding(ctx);
 	}
 
-	function persistState(): void {
-		if (state) pi.appendEntry(TRIO_STATE_ENTRY, state);
-	}
-
-	function updateStatus(ctx: ExtensionContext): void {
-		if (!state?.active) {
-			ctx.ui.setStatus("trio", undefined);
-			return;
-		}
-		const maxRounds = config?.maxReviewRounds ?? MAX_REVIEW_ROUNDS;
-		const round = state.phase === "reviewing" ? ` (${state.reviewRound + 1}/${maxRounds})` : "";
-		const theme = ctx.ui.theme;
-		ctx.ui.setStatus(
-			"trio",
-			`${theme.fg("accent", "◆")} ${theme.fg("dim", "trio:")} ${theme.fg("accent", phaseLabel(state.phase))}${theme.fg("dim", round)}`,
-		);
-	}
-
-	function requirePhase(expected: TrioPhase): TrioWorkflowState {
-		if (!state?.active || state.phase !== expected) throw new Error(`Trio tool is only valid during the ${expected} phase`);
-		return state;
-	}
-
-	function resolveRole(ctx: ExtensionContext, role: TrioRoleConfig): Model<any> {
-		const model = ctx.modelRegistry.find(role.provider, role.model);
-		if (!model) throw new Error(`Configured Trio model not found: ${role.provider}/${role.model}`);
-		return model;
-	}
-
-	async function selectRole(ctx: ExtensionContext, role: TrioRoleConfig): Promise<void> {
-		const model = resolveRole(ctx, role);
-		const usage = ctx.getContextUsage();
-		if (usage?.tokens != null && usage.tokens >= model.contextWindow * 0.95) throw new Error(`Cannot switch to ${role.provider}/${role.model}: current context uses ${usage.tokens} tokens, near its ${model.contextWindow}-token limit`);
-		if (ctx.model?.provider !== model.provider || ctx.model.id !== model.id) {
-			const selected = await pi.setModel(model);
-			if (!selected) throw new Error(`No credentials available for ${role.provider}/${role.model}`);
-		}
-		if (role.thinkingLevel !== undefined) pi.setThinkingLevel(role.thinkingLevel);
-	}
-
-	function activateToolsForPhase(phase: TrioPhase): void {
-		if (!state) return;
-		pi.setActiveTools(getToolsForPhase(phase, state.original.tools, pi.getAllTools().map((tool) => tool.name)));
-	}
-
-	async function enterPhase(phase: Exclude<TrioPhase, "idle">, ctx: ExtensionContext): Promise<void> {
-		if (!state) throw new Error("Trio workflow state is unavailable");
-		const currentConfig = requireConfig();
-		const role = phase === "executing" ? currentConfig.executor : phase === "reviewing" ? currentConfig.reviewer : currentConfig.planner;
-		await selectRole(ctx, role);
-		state = { ...state, active: true, phase };
-		activateToolsForPhase(phase);
-		persistState();
-		updateStatus(ctx);
-	}
-
-	async function restoreOriginalState(ctx: ExtensionContext, message?: string): Promise<void> {
-		if (!state) return;
-		announcedPhaseKey = undefined;
-		const original = state.original;
-		state = { ...state, active: false, phase: "idle" };
-		pi.setActiveTools(getToolsForPhase("idle", original.tools, pi.getAllTools().map((tool) => tool.name)));
-		if (original.model) {
-			const model = ctx.modelRegistry.find(original.model.provider, original.model.model);
-			if (model) await pi.setModel(model);
-		}
-		pi.setThinkingLevel(original.thinkingLevel);
-		persistState();
-		updateStatus(ctx);
-		if (message) ctx.ui.notify(message, "info");
-	}
-
-	function ensureToolsRegistered(): void {
+	function ensureToolRegistered(): void {
 		if (toolsRegistered) return;
 		toolsRegistered = true;
-
-		pi.registerTool({ name: TRANSITION_TOOLS.delegate, label: "Delegate to Trio Executor", description: "Hand the implementation plan to the configured Trio executor model. Call this as the only tool in the response.", parameters: Type.Object({ task: Type.String(), plan: Type.Array(Type.String(), { minItems: 1 }), acceptanceCriteria: Type.Array(Type.String(), { minItems: 1 }), relevantFiles: Type.Optional(Type.Array(Type.String())) }), async execute(_id, params, _signal, _onUpdate, ctx) { requirePhase("planning"); await enterPhase("executing", ctx); return { content: [{ type: "text", text: `Execution delegated. Implement the following plan, validate it, then call ${TRANSITION_TOOLS.submit}.\n\nTask: ${params.task}\n\nPlan:\n${params.plan.map((step, index) => `${index + 1}. ${step}`).join("\n")}\n\nAcceptance criteria:\n${params.acceptanceCriteria.map((criterion) => `- ${criterion}`).join("\n")}${params.relevantFiles?.length ? `\n\nRelevant files:\n${params.relevantFiles.map((file) => `- ${file}`).join("\n")}` : ""}` }], details: { phase: "executing", plan: params.plan } }; } });
-
-		pi.registerTool({ name: TRANSITION_TOOLS.submit, label: "Submit Trio Work for Review", description: "Return completed executor work to the configured Trio reviewer model. Call this as the only tool in the response.", parameters: Type.Object({ summary: Type.String(), testsRun: Type.Array(Type.String()), unresolvedIssues: Type.Optional(Type.Array(Type.String())) }), async execute(_id, params, _signal, _onUpdate, ctx) { requirePhase("executing"); await enterPhase("reviewing", ctx); return { content: [{ type: "text", text: `Executor submitted work for review.\n\nSummary:\n${params.summary}\n\nValidation:\n${params.testsRun.length ? params.testsRun.map((test) => `- ${test}`).join("\n") : "- None reported"}${params.unresolvedIssues?.length ? `\n\nUnresolved issues:\n${params.unresolvedIssues.map((issue) => `- ${issue}`).join("\n")}` : ""}` }], details: { phase: "reviewing", reviewRound: state?.reviewRound ?? 0 } }; } });
-
-		pi.registerTool({ name: TRANSITION_TOOLS.revise, label: "Request Trio Changes", description: "Send concrete review findings back to the Trio executor. Call this as the only tool in the response.", parameters: Type.Object({ issues: Type.Array(Type.String(), { minItems: 1 }), requiredChanges: Type.Array(Type.String(), { minItems: 1 }) }), async execute(_id, params, _signal, _onUpdate, ctx) { const current = requirePhase("reviewing"); const max = requireConfig().maxReviewRounds ?? MAX_REVIEW_ROUNDS; if (current.reviewRound >= max) throw new Error(`Maximum review rounds (${max}) reached. Call ${TRANSITION_TOOLS.approve} and report remaining concerns.`); state = { ...current, reviewRound: current.reviewRound + 1 }; await enterPhase("executing", ctx); return { content: [{ type: "text", text: `Review requested another implementation pass. Address every required change, re-run validation, then call ${TRANSITION_TOOLS.submit}.\n\nIssues:\n${params.issues.map((issue) => `- ${issue}`).join("\n")}\n\nRequired changes:\n${params.requiredChanges.map((change) => `- ${change}`).join("\n")}` }], details: { phase: "executing", reviewRound: state?.reviewRound ?? 0 } }; } });
-
-		pi.registerTool({ name: TRANSITION_TOOLS.approve, label: "Approve Trio Work", description: "Approve the implementation and move to final response. Call this as the only tool in the response.", parameters: Type.Object({ summary: Type.String(), remainingConcerns: Type.Optional(Type.Array(Type.String())) }), async execute(_id, params, _signal, _onUpdate, ctx) { requirePhase("reviewing"); await enterPhase("finalizing", ctx); return { content: [{ type: "text", text: `Review approved. Now provide the final response to the user.\n\nReview conclusion:\n${params.summary}${params.remainingConcerns?.length ? `\n\nRemaining concerns:\n${params.remainingConcerns.map((concern) => `- ${concern}`).join("\n")}` : ""}` }], details: { phase: "finalizing", reviewRound: state?.reviewRound ?? 0 } }; } });
+		pi.registerTool({
+			name: EXECUTOR_TOOL,
+			label: "Delegate to Trio Executor",
+			description: "Run the configured Trio executor in a Herdr agent pane with the /impl-review prompt.",
+			parameters: Type.Object({ plan: Type.String() }),
+			async execute(_id, params, _signal, _onUpdate, ctx) {
+				const currentTask = task;
+				if (!currentTask) throw new Error("No active Trio task");
+				const transcript = await runExecutorInHerdr(currentTask, params.plan, requireConfig(), ctx);
+				return { content: [{ type: "text", text: `Executor finished. Review the transcript and working tree, request another executor pass if needed, otherwise commit the result.\n\nExecutor transcript:\n${transcript}` }], details: { pane: "herdr" } };
+			},
+		});
 	}
 
-	function doctorCheck(name: string, check: () => void): string {
-		try {
-			check();
-			return `✓ ${name}`;
-		} catch (error) {
-			return `✗ ${name}: ${error instanceof Error ? error.message : String(error)}`;
-		}
-	}
-
-	function runDoctor(ctx: ExtensionCommandContext): string {
-		const globalPath = join(getAgentDir(), CONFIG_FILE_NAME);
-		const projectPath = join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE_NAME);
-		let loadedConfig: TrioConfig | undefined;
-		let loadedPaths: string[] = [];
-		const checks = [
-			doctorCheck("config", () => {
-				const loaded = loadConfig(ctx);
-				loadedConfig = loaded.config;
-				loadedPaths = loaded.paths;
-				if (!loadedConfig) throw new Error(`not configured; run /trio setup to create ${globalPath}`);
-			}),
-			doctorCheck(`global config ${globalPath}`, () => {
-				if (!existsSync(globalPath)) throw new Error("not found");
-			}),
-			ctx.isProjectTrusted()
-				? existsSync(projectPath)
-					? `✓ project config ${projectPath}`
-					: `- project config ${projectPath}: not found; optional`
-				: `- project config ${projectPath}: skipped; project is not trusted`,
-			doctorCheck("configured models", () => {
-				if (!loadedConfig) throw new Error("config unavailable");
-				resolveRole(ctx, loadedConfig.planner);
-				resolveRole(ctx, loadedConfig.executor);
-				resolveRole(ctx, loadedConfig.reviewer);
-			}),
-			doctorCheck("transition tools", () => {
-				ensureToolsRegistered();
-				const tools = new Set(pi.getAllTools().map((tool) => tool.name));
-				for (const tool of TRANSITION_TOOL_NAMES) {
-					if (!tools.has(tool)) throw new Error(`${tool} is not registered`);
-				}
-			}),
-			doctorCheck("session state", () => {
-				if (!state) return;
-				if (state.active && state.phase === "idle") throw new Error("active workflow has idle phase");
-				if (state.reviewRound < 0) throw new Error("review round is negative");
-			}),
-		];
-		return [
-			"trio doctor",
-			`status: ${state?.active ? `${state.phase} (${state.reviewRound}/${loadedConfig?.maxReviewRounds ?? MAX_REVIEW_ROUNDS})` : "idle"}`,
-			`config paths: ${loadedPaths.length ? loadedPaths.join(", ") : "none"}`,
-			...checks,
-		].join("\n");
-	}
-
-	async function startWorkflow(task: string, ctx: ExtensionCommandContext): Promise<void> {
-		if (state?.active) {
-			ctx.ui.notify(`Trio is already active in the ${state.phase} phase. Use /trio stop first.`, "warning");
-			return;
-		}
+	async function startWorkflow(request: string, ctx: ExtensionCommandContext): Promise<void> {
 		const currentConfig = await ensureConfigured(ctx);
 		if (!currentConfig) return;
-		announcedPhaseKey = undefined;
 		resolveRole(ctx, currentConfig.planner);
 		resolveRole(ctx, currentConfig.executor);
-		resolveRole(ctx, currentConfig.reviewer);
-		const original: OriginalSessionState = { model: ctx.model ? { provider: ctx.model.provider, model: ctx.model.id } : undefined, thinkingLevel: pi.getThinkingLevel(), tools: pi.getActiveTools() };
-		ensureToolsRegistered();
-		state = { version: 1, active: true, phase: "planning", task, reviewRound: 0, original };
-		try {
-			await enterPhase("planning", ctx);
-		} catch (error) {
-			state = undefined;
-			pi.setActiveTools(original.tools);
-			throw error;
-		}
-		await pi.sendMessage(
-			{
-				customType: "trio-kickoff",
-				content: formatKickoffMessage(task),
-				display: true,
-				details: { phase: "planning", task },
-			},
-			{ triggerTurn: true, deliverAs: "followUp" },
-		);
-		await ctx.waitForIdle();
+		ensureToolRegistered();
+		task = request;
+		originalTools = pi.getActiveTools();
+		await selectRole(ctx, currentConfig.planner);
+		pi.setActiveTools([...new Set([...originalTools, EXECUTOR_TOOL])]);
+		ctx.ui.setStatus("trio", `${ctx.ui.theme.fg("accent", "◆")} ${ctx.ui.theme.fg("dim", "trio:")} planner`);
+		await pi.sendMessage({ customType: "trio-kickoff", content: request, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+		await pi.sendMessage({ customType: "trio-instructions", content: plannerInstructions(request, currentConfig), display: false }, { triggerTurn: true, deliverAs: "followUp" });
+	}
+
+	function stop(ctx: ExtensionCommandContext): void {
+		task = undefined;
+		ctx.ui.setStatus("trio", undefined);
+		if (originalTools) pi.setActiveTools(originalTools);
+		originalTools = undefined;
 	}
 
 	pi.registerCommand("trio", {
-		description: "Run an interactive planner → executor → reviewer workflow",
+		description: "Run a simple planner → Herdr executor → planner commit workflow",
 		getArgumentCompletions(prefix) {
-			const items = ["status", "config", "doctor", "setup", "stop", "start "].map((value) => ({ value, label: value }));
+			const items = ["status", "config", "setup", "stop", "start "].map((value) => ({ value, label: value }));
 			const filtered = items.filter((item) => item.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
 		},
 		handler: async (args, ctx) => {
 			const input = args.trim();
 			if (!input) {
-				ctx.ui.notify("Usage: /trio <task> | /trio status | /trio config | /trio doctor | /trio setup | /trio stop", "info");
+				ctx.ui.notify("Usage: /trio <task> | /trio status | /trio config | /trio setup | /trio stop", "info");
 				return;
 			}
 			try {
-				if (input === "status") {
-					ctx.ui.notify(state?.active ? `Trio phase: ${state.phase}; review rounds used: ${state.reviewRound}/${requireConfig().maxReviewRounds ?? MAX_REVIEW_ROUNDS}` : "Trio is idle. Transition tools are not active.", "info");
-					return;
-				}
+				if (input === "status") return ctx.ui.notify(task ? `Trio planner active: ${task}` : "Trio is idle.", "info");
 				if (input === "config") {
 					const loaded = loadConfig(ctx);
 					config = loaded.config;
 					configPaths = loaded.paths;
-					ctx.ui.notify(config ? `Trio config (${configPaths.join(", ")}):\n${JSON.stringify(config, null, 2)}` : `Trio is not configured. Run /trio setup. Config will be saved to ${join(getAgentDir(), CONFIG_FILE_NAME)}.`, "info");
-					return;
+					return ctx.ui.notify(config ? `Trio config (${configPaths.join(", ")}):\n${JSON.stringify(config, null, 2)}` : `Trio is not configured. Run /trio setup.`, "info");
 				}
-				if (input === "doctor") {
-					ctx.ui.notify(runDoctor(ctx), "info");
-					return;
-				}
-				if (input === "setup") {
-					if (state?.active) ctx.ui.notify("Stop the active Trio workflow before changing its models.", "warning");
-					else await runOnboarding(ctx);
-					return;
-				}
-				if (input === "stop") {
-					if (!state?.active) ctx.ui.notify("Trio is already idle.", "info");
-					else {
-						if (!ctx.isIdle()) {
-							ctx.abort();
-							await ctx.waitForIdle();
-						}
-						await restoreOriginalState(ctx, "Trio stopped; previous model and tools restored.");
-					}
-					return;
-				}
-				const task = input.startsWith("start ") ? input.slice("start ".length).trim() : input;
-				if (!task) throw new Error("Usage: /trio start <task>");
+				if (input === "setup") return void (await runOnboarding(ctx));
+				if (input === "stop") return stop(ctx);
+				const request = input.startsWith("start ") ? input.slice("start ".length).trim() : input;
+				if (!request) throw new Error("Usage: /trio start <task>");
 				await ctx.waitForIdle();
-				await startWorkflow(task, ctx);
+				await startWorkflow(request, ctx);
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
 		},
-	});
-
-	pi.on("tool_call", (event, ctx) => {
-		if (!TRANSITION_TOOL_NAMES.has(event.toolName)) return;
-		const branch = ctx.sessionManager.getBranch();
-		for (let index = branch.length - 1; index >= 0; index--) {
-			const entry = branch[index];
-			if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-			const calls = entry.message.content.filter((content) => content.type === "toolCall");
-			if (calls.some((call) => call.id === event.toolCallId) && calls.length > 1) {
-				return { block: true, reason: `${event.toolName} must be the only tool call in its response. Finish the other calls, then retry the transition alone.` };
-			}
-		}
-	});
-
-	(pi as any).on("context", (event: any) => {
-		if (!state?.active || !config) return;
-		const phaseKey = `${state.phase}:${state.reviewRound}`;
-		if (phaseKey === announcedPhaseKey) return;
-		const instructions = getPhaseInstructions(state, config);
-		if (!instructions) return;
-		announcedPhaseKey = phaseKey;
-		const phaseMessage: any = { role: "custom", customType: "trio-phase", content: instructions, display: false, timestamp: Date.now() };
-		return { messages: [...event.messages, phaseMessage] };
-	});
-
-	pi.on("session_compact", () => {
-		announcedPhaseKey = undefined;
-	});
-
-	pi.on("agent_end", async (_event, ctx) => {
-		if (state?.active && state.phase === "finalizing") await restoreOriginalState(ctx);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -535,20 +308,9 @@ export default function trioExtension(pi: ExtensionAPI): void {
 			const loaded = loadConfig(ctx);
 			config = loaded.config;
 			configPaths = loaded.paths;
+			ensureToolRegistered();
 		} catch (error) {
 			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
-			config = undefined;
-			configPaths = [];
 		}
-		state = readLatestWorkflowState(ctx.sessionManager.getBranch() as SessionEntry[]);
-		if (state?.active) {
-			try {
-				ensureToolsRegistered();
-				await enterPhase(state.phase === "idle" ? "planning" : state.phase, ctx);
-			} catch (error) {
-				ctx.ui.notify(`Could not restore Trio workflow: ${error instanceof Error ? error.message : String(error)}`, "error");
-			}
-		}
-		updateStatus(ctx);
 	});
 }
