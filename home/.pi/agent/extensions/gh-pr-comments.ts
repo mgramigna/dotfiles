@@ -201,21 +201,33 @@ async function choosePrompt(ctx: ExtensionCommandContext): Promise<string | null
 	const implementPrompt = "Resolve the requested feedback in the codebase, then summarize what changed.";
 	const discussPrefix = "Do not implement anything. Do not modify files. Treat the selected PR comments as context for discussion only.";
 	const discussPlaceholder = "Explain what these comments mean and suggest options for addressing them.";
+	const implementPlaceholder = "Add constraints, preferences, or extra context for the fix.";
 	const implementChoice = "Implement fixes";
+	const implementWithInstructionsChoice = "Implement fixes with custom instructions";
 	const discussChoice = "Discuss only / no code changes";
 	const select = (ctx.ui as any).select as ((title: string, choices: string[]) => Promise<string | undefined>) | undefined;
 	const input = (ctx.ui as any).input as ((prompt: string, placeholder?: string) => Promise<string | undefined>) | undefined;
 
 	const choice = select
-		? await select("Choose prompt for selected PR comments", [implementChoice, discussChoice, "Cancel"])
+		? await select("Choose prompt for selected PR comments", [
+				implementChoice,
+				implementWithInstructionsChoice,
+				discussChoice,
+				"Cancel",
+			])
 		: implementChoice;
 
 	if (!choice || choice === "Cancel") return null;
 	if (choice === implementChoice) return implementPrompt;
 
 	if (!input) {
-		ctx.ui.notify("Discuss-only prompts require a UI input prompt in this Pi build", "error");
+		ctx.ui.notify("Custom prompts require a UI input prompt in this Pi build", "error");
 		return null;
+	}
+
+	if (choice === implementWithInstructionsChoice) {
+		const userPrompt = (await input("Any extra instructions for implementing these PR comments?", implementPlaceholder))?.trim();
+		return userPrompt ? `${implementPrompt}\n\nAdditional user instructions:\n${userPrompt}` : implementPrompt;
 	}
 
 	const userPrompt = (await input("What would you like to ask about these PR comments?", discussPlaceholder))?.trim();
