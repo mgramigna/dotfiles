@@ -5,332 +5,364 @@ import type { Model } from "@earendil-works/pi-ai";
 import {
 	CONFIG_DIR_NAME,
 	getAgentDir,
+	isToolCallEventType,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Box, Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { autocompleteSelect } from "../shared/autocomplete-select";
 
-const CONFIG_FILE_NAME = "trio.json";
-const EXECUTOR_TOOL = "trio_delegate_to_executor";
+const CONFIG_FILE = "trio.json";
+const SPAWN_TOOL = "trio_spawn_executor";
+const POLL_TOOL = "trio_poll_executor";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const CONFIG_THINKING_LEVELS = [...THINKING_LEVELS, "max"] as const;
+const PLANNER_TOOLS = [
+	"bash",
+	"read",
+	"fffind",
+	"ffgrep",
+	"linear_get_issue",
+	"fetch_content",
+	"get_search_content",
+	SPAWN_TOOL,
+	POLL_TOOL,
+] as const;
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 type ConfigThinkingLevel = (typeof CONFIG_THINKING_LEVELS)[number];
 
-interface TrioRoleConfig {
+type RoleConfig = {
 	provider: string;
 	model: string;
 	thinkingLevel?: ThinkingLevel;
-	systemPrompt?: string;
-}
+};
 
-interface TrioConfig {
-	planner: TrioRoleConfig;
-	executor: TrioRoleConfig;
-}
+type TrioConfig = {
+	planner: RoleConfig;
+	executor: RoleConfig;
+};
+
+type ExecutorRun = {
+	paneId: string;
+	startedAt: number;
+};
+
+const spawnSchema = Type.Object({
+	instructions: Type.String({ description: "Focused implementation instructions for the executor." }),
+});
+type SpawnInput = Static<typeof spawnSchema>;
+
+const pollSchema = Type.Object({
+	paneId: Type.String({ description: "Herdr pane id returned by trio_spawn_executor." }),
+	timeoutSeconds: Type.Optional(Type.Number({ description: "Maximum time to wait. Defaults to 1800 seconds." })),
+});
+type PollInput = Static<typeof pollSchema>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readRoleConfig(value: unknown, fallback: TrioRoleConfig | undefined, label: string): TrioRoleConfig {
-	if (value !== undefined && !isRecord(value)) throw new Error(`${label} must be an object`);
-	const role = (value ?? {}) as Record<string, unknown>;
-	const provider = role.provider ?? fallback?.provider;
-	const model = role.model ?? fallback?.model;
-	const thinkingLevel = role.thinkingLevel ?? fallback?.thinkingLevel;
-	const systemPrompt = role.systemPrompt ?? fallback?.systemPrompt;
-
-	if (typeof provider !== "string" || !provider.trim()) throw new Error(`${label}.provider must be a non-empty string`);
-	if (typeof model !== "string" || !model.trim()) throw new Error(`${label}.model must be a non-empty string`);
-	if (thinkingLevel !== undefined && (typeof thinkingLevel !== "string" || !CONFIG_THINKING_LEVELS.includes(thinkingLevel as ConfigThinkingLevel))) {
-		throw new Error(`${label}.thinkingLevel must be one of ${CONFIG_THINKING_LEVELS.join(", ")}`);
-	}
-	if (systemPrompt !== undefined && typeof systemPrompt !== "string") throw new Error(`${label}.systemPrompt must be a string`);
-
-	return {
-		provider: provider.trim(),
-		model: model.trim(),
-		...(thinkingLevel === undefined ? {} : { thinkingLevel: (thinkingLevel === "max" ? "xhigh" : thinkingLevel) as ThinkingLevel }),
-		...(systemPrompt === undefined ? {} : { systemPrompt }),
-	};
-}
-
-function mergeTrioConfig(base: TrioConfig | undefined, value: unknown, source: string): TrioConfig {
-	if (!isRecord(value)) throw new Error(`${source} must contain a JSON object`);
-	return {
-		planner: readRoleConfig(value.planner, base?.planner, `${source}.planner`),
-		executor: readRoleConfig(value.executor, base?.executor, `${source}.executor`),
-	};
-}
-
-function readJsonFile(path: string): unknown {
+function readJson(path: string): unknown {
 	try {
 		return JSON.parse(readFileSync(path, "utf8"));
 	} catch (error) {
-		throw new Error(`Failed to read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+		throw new Error(`Could not read ${path}: ${error instanceof Error ? error.message : String(error)}`);
 	}
+}
+
+function roleFrom(value: unknown, fallback: RoleConfig | undefined, label: string): RoleConfig {
+	if (value !== undefined && !isRecord(value)) throw new Error(`${label} must be an object`);
+	const raw = (value ?? {}) as Record<string, unknown>;
+	const provider = raw.provider ?? fallback?.provider;
+	const model = raw.model ?? fallback?.model;
+	const thinking = raw.thinkingLevel ?? fallback?.thinkingLevel;
+	if (typeof provider !== "string" || !provider.trim()) throw new Error(`${label}.provider is required`);
+	if (typeof model !== "string" || !model.trim()) throw new Error(`${label}.model is required`);
+	if (thinking !== undefined && (typeof thinking !== "string" || !CONFIG_THINKING_LEVELS.includes(thinking as ConfigThinkingLevel))) {
+		throw new Error(`${label}.thinkingLevel must be one of ${CONFIG_THINKING_LEVELS.join(", ")}`);
+	}
+	return {
+		provider: provider.trim(),
+		model: model.trim(),
+		...(thinking === undefined ? {} : { thinkingLevel: (thinking === "max" ? "xhigh" : thinking) as ThinkingLevel }),
+	};
+}
+
+function mergeConfig(base: TrioConfig | undefined, raw: unknown, source: string): TrioConfig {
+	if (!isRecord(raw)) throw new Error(`${source} must be a JSON object`);
+	return {
+		planner: roleFrom(raw.planner, base?.planner, `${source}.planner`),
+		executor: roleFrom(raw.executor, base?.executor, `${source}.executor`),
+	};
 }
 
 function loadConfig(ctx: ExtensionContext): { config: TrioConfig | undefined; paths: string[] } {
 	let config: TrioConfig | undefined;
 	const paths: string[] = [];
-	const globalPath = join(getAgentDir(), CONFIG_FILE_NAME);
-	const projectPath = join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE_NAME);
+	const globalPath = join(getAgentDir(), CONFIG_FILE);
+	const projectPath = join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE);
 	if (existsSync(globalPath)) {
-		config = mergeTrioConfig(undefined, readJsonFile(globalPath), globalPath);
+		config = mergeConfig(config, readJson(globalPath), globalPath);
 		paths.push(globalPath);
 	}
 	if (ctx.isProjectTrusted() && existsSync(projectPath)) {
-		config = mergeTrioConfig(config, readJsonFile(projectPath), projectPath);
+		config = mergeConfig(config, readJson(projectPath), projectPath);
 		paths.push(projectPath);
 	}
 	return { config, paths };
 }
 
-function modelKey(model: Model<any>): string {
+function modelLabel(model: Model<any>): string {
 	return `${model.provider}/${model.id}`;
 }
 
-function plannerInstructions(task: string, config: TrioConfig): string {
-	const base = `You are the Trio planner. Plan the user's work, then delegate implementation to the executor by calling ${EXECUTOR_TOOL}.
-
-When the executor finishes, inspect its transcript and the working tree. If the result is acceptable, create a git commit yourself using a Conventional Commits message. If it is not acceptable, delegate a focused follow-up to the executor. Do not claim completion until the commit has been created.
-
-Original task:\n${task}`;
-	return config.planner.systemPrompt?.trim() ? `${base}\n\n[TRIO PLANNER SYSTEM PROMPT]\n${config.planner.systemPrompt.trim()}` : base;
+function quote(value: string): string {
+	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function executorPrompt(task: string, plan: string, config: TrioConfig): string {
-	const extra = config.executor.systemPrompt?.trim() ? `\n\n[TRIO EXECUTOR SYSTEM PROMPT]\n${config.executor.systemPrompt.trim()}` : "";
-	return `/impl-review\n\nYou are the Trio executor. Implement the planner's delegated task in this working tree. Run relevant validation. Because this prompt is /impl-review, perform the implementation-review workflow, including the overseer review tool, before you finish. Do not commit; the planner will inspect and commit after you return.\n\nTask:\n${task}\n\nPlanner instructions:\n${plan}${extra}`;
-}
-
-function runHerdr(args: string[], input?: string): string {
+function herdr(args: string[], input?: string): string {
 	return execFileSync("herdr", args, { encoding: "utf8", input });
+}
+
+function paneIdFromSplit(output: string): string {
+	const parsed = JSON.parse(output) as { result?: { pane?: { pane_id?: string } } };
+	const paneId = parsed.result?.pane?.pane_id;
+	if (!paneId) throw new Error("Herdr did not return a pane id");
+	return paneId;
+}
+
+function paneStatus(paneId: string): string {
+	const parsed = JSON.parse(herdr(["pane", "list"])) as { result?: { panes?: Array<{ pane_id?: string; agent_status?: string }> } };
+	const pane = parsed.result?.panes?.find((candidate) => candidate.pane_id === paneId);
+	if (!pane) throw new Error(`Herdr pane not found: ${paneId}`);
+	return pane.agent_status ?? "unknown";
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) return reject(signal.reason ?? new Error("Aborted"));
-		const timeout = setTimeout(cleanupAndResolve, ms);
-		function cleanupAndResolve(): void {
-			if (signal) signal.removeEventListener("abort", cleanupAndReject);
-			resolve();
-		}
-		function cleanupAndReject(): void {
+		const timeout = setTimeout(resolve, ms);
+		signal?.addEventListener("abort", () => {
 			clearTimeout(timeout);
-			reject(signal?.reason ?? new Error("Aborted"));
-		}
-		signal?.addEventListener("abort", cleanupAndReject, { once: true });
+			reject(signal.reason ?? new Error("Aborted"));
+		}, { once: true });
 	});
 }
 
-function parsePaneId(json: string): string {
-	const parsed = JSON.parse(json) as { result?: { pane?: { pane_id?: string } } };
-	const paneId = parsed.result?.pane?.pane_id;
-	if (!paneId) throw new Error("Could not read new Herdr pane id");
-	return paneId;
-}
-
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function getPaneAgentStatus(paneId: string): string | undefined {
-	const parsed = JSON.parse(runHerdr(["pane", "list"])) as { result?: { panes?: Array<{ pane_id?: string; agent_status?: string }> } };
-	const pane = parsed.result?.panes?.find((candidate) => candidate.pane_id === paneId);
-	if (!pane) throw new Error(`Trio executor pane disappeared: ${paneId}`);
-	return pane.agent_status;
-}
-
-async function waitForExecutor(paneId: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
-	const startedAt = Date.now();
-	let lastStatus: string | undefined;
-	while (Date.now() - startedAt < timeoutMs) {
-		lastStatus = getPaneAgentStatus(paneId);
-		if (lastStatus === "done" || lastStatus === "idle" || lastStatus === "blocked") return lastStatus;
-		await sleep(10_000, signal);
+async function waitForStarted(paneId: string, signal?: AbortSignal): Promise<string> {
+	const deadline = Date.now() + 60_000;
+	let status = paneStatus(paneId);
+	while (Date.now() < deadline) {
+		if (!["idle", "unknown"].includes(status)) return status;
+		await sleep(1_000, signal);
+		status = paneStatus(paneId);
 	}
-	throw new Error(`Timed out waiting for Trio executor pane ${paneId} after ${Math.round(timeoutMs / 1000)}s (last status: ${lastStatus ?? "unknown"})`);
+	throw new Error(`Timed out waiting for executor ${paneId} to start; last status was ${status}`);
 }
 
-async function runExecutorInHerdr(task: string, plan: string, config: TrioConfig, ctx: ExtensionContext, signal?: AbortSignal): Promise<string> {
-	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Trio executor requires running inside herdr (HERDR_ENV=1)");
-	const paneId = parsePaneId(runHerdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
-	const modelArg = `${config.executor.provider}/${config.executor.model}${config.executor.thinkingLevel ? `:${config.executor.thinkingLevel}` : ""}`;
-	const command = [
-		"pi",
-		"--provider", config.executor.provider,
-		"--model", modelArg,
-		"--name", "trio executor",
-		executorPrompt(task, plan, config),
-	].map(shellQuote).join(" ");
-	runHerdr(["pane", "run", paneId, command]);
-	const status = await waitForExecutor(paneId, 1_200_000, signal);
-	const transcript = runHerdr(["pane", "read", paneId, "--source", "recent-unwrapped", "--lines", "240"]);
-	ctx.ui.notify(`Trio executor reached ${status} in pane ${paneId}.`, status === "blocked" ? "warning" : "info");
-	return transcript;
+async function waitForDone(paneId: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+	const deadline = Date.now() + timeoutMs;
+	let status = paneStatus(paneId);
+	while (Date.now() < deadline) {
+		if (["done", "idle", "blocked"].includes(status)) return status;
+		await sleep(10_000, signal);
+		status = paneStatus(paneId);
+	}
+	throw new Error(`Timed out waiting for ${paneId}; last status was ${status}`);
 }
 
-export default function trioExtension(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer("trio-kickoff", (message, _options, theme) => {
-		const content = typeof message.content === "string" ? message.content : String(message.content ?? "");
-		const header = `${theme.fg("accent", "◆")} ${theme.fg("accent", theme.bold("Trio planner started"))}`;
-		const text = content.trim() ? `${header}\n${theme.fg("muted", content.trim())}` : header;
-		const box = new Box(1, 1, (value) => theme.bg("customMessageBg", value));
-		box.addChild(new Text(text, 0, 0));
-		return box;
-	});
+function executorPrompt(task: string, instructions: string): string {
+	return `/impl-review
 
+You are the Trio executor. Implement the delegated task in this working tree.
+
+Hard requirements:
+- Do not commit.
+- Run relevant tests/typechecks.
+- Run overseer review.
+- Address overseer findings and rerun review until it passes or only explicitly non-blocking comments remain.
+- Finish with a concise summary, validations run, and final overseer outcome.
+
+Original user task:
+${task}
+
+Planner delegation:
+${instructions}`;
+}
+
+function plannerPrompt(task: string): string {
+	return `You are the Trio planner.
+
+Workflow:
+1. Investigate and plan using read-only/search tools and bash as needed.
+2. You are forbidden from editing files. Do not call edit or write. Do not use shell redirection, heredocs, perl/python/ruby/node scripts, or other bash tricks to modify files.
+3. Delegate implementation with ${SPAWN_TOOL}.
+4. Poll the executor with ${POLL_TOOL} until it is done.
+5. Inspect the executor transcript and working tree. If more work is needed, delegate a focused follow-up and poll again.
+6. When acceptable, run light verification only; do not edit.
+7. Create the git commit yourself with a Conventional Commits message.
+
+Original user task:
+${task}`;
+}
+
+function bashLooksMutating(command: string): boolean {
+	return /(^|[;&|]\s*)(cat\s*>|tee\b|printf\b.*>|echo\b.*>|python\b|python3\b|perl\b|ruby\b|node\b|ed\b|ex\b|vim\b|nvim\b|rm\b|mv\b|cp\b|touch\b|truncate\b)/m.test(command) || /<<\s*['"]?\w+/.test(command);
+}
+
+export default function trio(pi: ExtensionAPI): void {
 	let config: TrioConfig | undefined;
-	let configPaths: string[] = [];
-	let task: string | undefined;
-	let toolsRegistered = false;
 	let originalTools: string[] | undefined;
+	let task: string | undefined;
+	let plannerActive = false;
+	const runs = new Map<string, ExecutorRun>();
 
 	function requireConfig(): TrioConfig {
 		if (!config) throw new Error("Trio is not configured. Run /trio setup.");
 		return config;
 	}
 
-	function resolveRole(ctx: ExtensionContext, role: TrioRoleConfig): Model<any> {
+	function resolveModel(ctx: ExtensionContext, role: RoleConfig): Model<any> {
 		const model = ctx.modelRegistry.find(role.provider, role.model);
-		if (!model) throw new Error(`Configured Trio model not found: ${role.provider}/${role.model}`);
+		if (!model) throw new Error(`Configured model not available: ${role.provider}/${role.model}`);
 		return model;
 	}
 
-	async function selectRole(ctx: ExtensionContext, role: TrioRoleConfig): Promise<void> {
-		const model = resolveRole(ctx, role);
+	async function selectModel(ctx: ExtensionContext, role: RoleConfig): Promise<void> {
+		const model = resolveModel(ctx, role);
 		if (ctx.model?.provider !== model.provider || ctx.model.id !== model.id) {
-			const selected = await pi.setModel(model);
-			if (!selected) throw new Error(`No credentials available for ${role.provider}/${role.model}`);
+			const ok = await pi.setModel(model);
+			if (!ok) throw new Error(`No credentials available for ${role.provider}/${role.model}`);
 		}
-		if (role.thinkingLevel !== undefined) pi.setThinkingLevel(role.thinkingLevel);
+		if (role.thinkingLevel) pi.setThinkingLevel(role.thinkingLevel);
 	}
 
-	async function runOnboarding(ctx: ExtensionContext): Promise<TrioConfig | undefined> {
-		const configPath = join(getAgentDir(), CONFIG_FILE_NAME);
+	async function setup(ctx: ExtensionCommandContext): Promise<void> {
 		const models = ctx.modelRegistry.getAvailable();
-		if (models.length === 0) {
-			ctx.ui.notify("No authenticated models are available. Configure a model with /login first.", "error");
-			return undefined;
-		}
-		async function chooseModel(title: string): Promise<Model<any> | undefined> {
-			const selected = await autocompleteSelect(ctx, { title, items: models.map((m: Model<any>) => ({ label: modelKey(m), value: modelKey(m), description: m.name })) });
-			if (!selected) return undefined;
+		if (models.length === 0) throw new Error("No authenticated models are available. Run /login first.");
+		const globalPath = join(getAgentDir(), CONFIG_FILE);
+		const projectPath = join(ctx.cwd, CONFIG_DIR_NAME, CONFIG_FILE);
+		const configTarget = ctx.isProjectTrusted()
+			? await autocompleteSelect(ctx, {
+				title: "Where should Trio save this config?",
+				items: [
+					{ label: "Project-local", value: "project", description: projectPath },
+					{ label: "Global", value: "global", description: globalPath },
+				],
+			})
+			: "global";
+		if (!configTarget) throw new Error("Setup cancelled");
+		if (configTarget === "global" && !ctx.isProjectTrusted()) ctx.ui.notify("Project is not trusted; saving Trio config globally.", "info");
+		async function chooseModel(title: string): Promise<Model<any>> {
+			const selected = await autocompleteSelect(ctx, { title, items: models.map((m: Model<any>) => ({ label: modelLabel(m), value: modelLabel(m), description: m.name })) });
+			if (!selected) throw new Error("Setup cancelled");
 			const [provider, ...modelParts] = selected.split("/");
-			return ctx.modelRegistry.find(provider!, modelParts.join("/"));
+			const model = ctx.modelRegistry.find(provider!, modelParts.join("/"));
+			if (!model) throw new Error(`Model not found: ${selected}`);
+			return model;
 		}
-		async function chooseThinkingLevel(title: string): Promise<ThinkingLevel | undefined | "cancelled"> {
+		async function chooseThinking(title: string): Promise<ThinkingLevel | undefined> {
 			const selected = await autocompleteSelect(ctx, {
 				title,
-				items: [
-					{ label: "Use pi default", value: "default", description: "Do not set a Trio-specific reasoning level" },
-					...CONFIG_THINKING_LEVELS.map((level) => ({ label: level, value: level, description: level === "max" ? "Alias for xhigh" : undefined })),
-				],
+				items: [{ label: "Use pi default", value: "default" }, ...CONFIG_THINKING_LEVELS.map((level) => ({ label: level, value: level }))],
 			});
-			if (!selected) return "cancelled";
+			if (!selected) throw new Error("Setup cancelled");
 			if (selected === "default") return undefined;
 			return (selected === "max" ? "xhigh" : selected) as ThinkingLevel;
 		}
-		const planner = await chooseModel("Trio setup: choose the planner model");
-		if (!planner) return undefined;
-		const plannerThinkingLevel = await chooseThinkingLevel("Trio setup: choose the planner reasoning level");
-		if (plannerThinkingLevel === "cancelled") return undefined;
-		const executor = await chooseModel("Trio setup: choose the executor model");
-		if (!executor) return undefined;
-		const executorThinkingLevel = await chooseThinkingLevel("Trio setup: choose the executor reasoning level");
-		if (executorThinkingLevel === "cancelled") return undefined;
-		const selectedConfig: TrioConfig = {
-			planner: { provider: planner.provider, model: planner.id, ...(plannerThinkingLevel === undefined ? {} : { thinkingLevel: plannerThinkingLevel }) },
-			executor: { provider: executor.provider, model: executor.id, ...(executorThinkingLevel === undefined ? {} : { thinkingLevel: executorThinkingLevel }) },
+		const planner = await chooseModel("Trio planner model");
+		const plannerThinking = await chooseThinking("Trio planner thinking");
+		const executor = await chooseModel("Trio executor model");
+		const executorThinking = await chooseThinking("Trio executor thinking");
+		config = {
+			planner: { provider: planner.provider, model: planner.id, ...(plannerThinking ? { thinkingLevel: plannerThinking } : {}) },
+			executor: { provider: executor.provider, model: executor.id, ...(executorThinking ? { thinkingLevel: executorThinking } : {}) },
 		};
-		mkdirSync(getAgentDir(), { recursive: true });
-		writeFileSync(configPath, `${JSON.stringify(selectedConfig, null, "\t")}\n`, "utf8");
-		config = selectedConfig;
-		configPaths = [configPath];
-		ctx.ui.notify(`Trio setup complete. Saved to ${configPath}.`, "info");
-		return selectedConfig;
+		const path = configTarget === "project" ? projectPath : globalPath;
+		mkdirSync(configTarget === "project" ? join(ctx.cwd, CONFIG_DIR_NAME) : getAgentDir(), { recursive: true });
+		writeFileSync(path, `${JSON.stringify(config, null, "\t")}\n`, "utf8");
+		ctx.ui.notify(`Trio config saved to ${path}${configTarget === "project" ? " (takes precedence over global config)" : ""}`, "info");
 	}
 
-	async function ensureConfigured(ctx: ExtensionContext): Promise<TrioConfig | undefined> {
+	pi.registerTool({
+		name: SPAWN_TOOL,
+		label: "Trio: Spawn Executor",
+		description: "Spawn a configured Trio executor in a Herdr pane. Returns once the agent has started working.",
+		parameters: spawnSchema,
+		async execute(_id, params: SpawnInput, signal, _onUpdate, ctx) {
+			if (!task) throw new Error("No active Trio task");
+			if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Trio requires running inside herdr");
+			const cfg = requireConfig();
+			const paneId = paneIdFromSplit(herdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
+			const modelArg = `${cfg.executor.provider}/${cfg.executor.model}${cfg.executor.thinkingLevel ? `:${cfg.executor.thinkingLevel}` : ""}`;
+			const command = ["pi", "--provider", cfg.executor.provider, "--model", modelArg, "--name", "trio executor", executorPrompt(task, params.instructions)].map(quote).join(" ");
+			herdr(["pane", "run", paneId, command]);
+			const status = await waitForStarted(paneId, signal);
+			runs.set(paneId, { paneId, startedAt: Date.now() });
+			ctx.ui.notify(`Trio executor started in ${paneId}`, "info");
+			return { content: [{ type: "text", text: `Executor started in Herdr pane ${paneId} with status ${status}. Poll this pane with ${POLL_TOOL}.` }], details: { paneId, status } };
+		},
+	});
+
+	pi.registerTool({
+		name: POLL_TOOL,
+		label: "Trio: Poll Executor",
+		description: "Wait for a Trio executor pane to finish, then return its recent transcript.",
+		parameters: pollSchema,
+		async execute(_id, params: PollInput, signal, _onUpdate, ctx) {
+			if (!runs.has(params.paneId)) throw new Error(`Unknown Trio executor pane: ${params.paneId}`);
+			const status = await waitForDone(params.paneId, (params.timeoutSeconds ?? 1800) * 1000, signal);
+			const transcript = herdr(["pane", "read", params.paneId, "--source", "recent-unwrapped", "--lines", "300"]);
+			ctx.ui.notify(`Trio executor ${params.paneId} is ${status}`, status === "blocked" ? "warning" : "info");
+			return { content: [{ type: "text", text: `Executor ${params.paneId} finished with status ${status}. Review transcript and working tree.\n\nTranscript:\n${transcript}` }], details: { paneId: params.paneId, status } };
+		},
+	});
+
+	pi.on("tool_call", (event) => {
+		if (!plannerActive) return;
+		if (event.toolName === "edit" || event.toolName === "write") return { block: true, reason: "Trio planner is not allowed to edit files. Delegate implementation to the executor." };
+		if (isToolCallEventType("bash", event) && bashLooksMutating(event.input.command)) {
+			return { block: true, reason: "Trio planner bash is limited to non-mutating commands, except git commit. Use the executor for file changes." };
+		}
+	});
+
+	async function start(request: string, ctx: ExtensionCommandContext): Promise<void> {
 		const loaded = loadConfig(ctx);
 		config = loaded.config;
-		configPaths = loaded.paths;
-		return config ?? runOnboarding(ctx);
-	}
-
-	function ensureToolRegistered(): void {
-		if (toolsRegistered) return;
-		toolsRegistered = true;
-		pi.registerTool({
-			name: EXECUTOR_TOOL,
-			label: "Delegate to Trio Executor",
-			description: "Run the configured Trio executor in a Herdr agent pane with the /impl-review prompt.",
-			parameters: Type.Object({ plan: Type.String() }),
-			async execute(_id, params, signal, _onUpdate, ctx) {
-				const currentTask = task;
-				if (!currentTask) throw new Error("No active Trio task");
-				const transcript = await runExecutorInHerdr(currentTask, params.plan, requireConfig(), ctx, signal);
-				return { content: [{ type: "text", text: `Executor finished. Review the transcript and working tree, request another executor pass if needed, otherwise commit the result.\n\nExecutor transcript:\n${transcript}` }], details: { pane: "herdr" } };
-			},
-		});
-	}
-
-	async function startWorkflow(request: string, ctx: ExtensionCommandContext): Promise<void> {
-		const currentConfig = await ensureConfigured(ctx);
-		if (!currentConfig) return;
-		resolveRole(ctx, currentConfig.planner);
-		resolveRole(ctx, currentConfig.executor);
-		ensureToolRegistered();
+		if (!config) return setup(ctx);
+		resolveModel(ctx, config.planner);
+		resolveModel(ctx, config.executor);
 		task = request;
+		plannerActive = true;
 		originalTools = pi.getActiveTools();
-		await selectRole(ctx, currentConfig.planner);
-		pi.setActiveTools([...new Set([...originalTools, EXECUTOR_TOOL])]);
-		ctx.ui.setStatus("trio", `${ctx.ui.theme.fg("accent", "◆")} ${ctx.ui.theme.fg("dim", "trio:")} planner`);
-		await pi.sendMessage({ customType: "trio-kickoff", content: request, display: true }, { triggerTurn: true, deliverAs: "followUp" });
-		await pi.sendMessage({ customType: "trio-instructions", content: plannerInstructions(request, currentConfig), display: false }, { triggerTurn: true, deliverAs: "followUp" });
-	}
-
-	function stop(ctx: ExtensionCommandContext): void {
-		task = undefined;
-		ctx.ui.setStatus("trio", undefined);
-		if (originalTools) pi.setActiveTools(originalTools);
-		originalTools = undefined;
+		await selectModel(ctx, config.planner);
+		pi.setActiveTools([...PLANNER_TOOLS]);
+		ctx.ui.setStatus("trio", `${ctx.ui.theme.fg("accent", "◆")} ${ctx.ui.theme.fg("dim", "trio")}`);
+		await pi.sendMessage({ customType: "trio-kickoff", content: `Trio started: ${request}`, display: true }, { triggerTurn: false, deliverAs: "followUp" });
+		await pi.sendMessage({ customType: "trio-instructions", content: plannerPrompt(request), display: false }, { triggerTurn: true, deliverAs: "followUp" });
 	}
 
 	pi.registerCommand("trio", {
-		description: "Run a simple planner → Herdr executor → planner commit workflow",
+		description: "Planner/executor workflow with a read-only planner and Herdr executor",
 		getArgumentCompletions(prefix) {
-			const items = ["status", "config", "setup", "stop", "start "].map((value) => ({ value, label: value }));
-			const filtered = items.filter((item) => item.value.startsWith(prefix));
-			return filtered.length > 0 ? filtered : null;
+			return ["setup", "config", "start "].map((value) => ({ value, label: value })).filter((item) => item.value.startsWith(prefix));
 		},
 		handler: async (args, ctx) => {
-			const input = args.trim();
-			if (!input) {
-				ctx.ui.notify("Usage: /trio <task> | /trio status | /trio config | /trio setup | /trio stop", "info");
-				return;
-			}
 			try {
-				if (input === "status") return ctx.ui.notify(task ? `Trio planner active: ${task}` : "Trio is idle.", "info");
+				const input = args.trim();
+				if (!input) return ctx.ui.notify("Usage: /trio <task> | setup | config", "info");
+				if (input === "setup") return void (await setup(ctx));
 				if (input === "config") {
 					const loaded = loadConfig(ctx);
 					config = loaded.config;
-					configPaths = loaded.paths;
-					return ctx.ui.notify(config ? `Trio config (${configPaths.join(", ")}):\n${JSON.stringify(config, null, 2)}` : `Trio is not configured. Run /trio setup.`, "info");
+					return ctx.ui.notify(config ? `Trio config (${loaded.paths.join(", ")}):\n${JSON.stringify(config, null, 2)}` : "Trio is not configured.", "info");
 				}
-				if (input === "setup") return void (await runOnboarding(ctx));
-				if (input === "stop") return stop(ctx);
 				const request = input.startsWith("start ") ? input.slice("start ".length).trim() : input;
 				if (!request) throw new Error("Usage: /trio start <task>");
 				await ctx.waitForIdle();
-				await startWorkflow(request, ctx);
+				await start(request, ctx);
 			} catch (error) {
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
@@ -339,10 +371,7 @@ export default function trioExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		try {
-			const loaded = loadConfig(ctx);
-			config = loaded.config;
-			configPaths = loaded.paths;
-			ensureToolRegistered();
+			config = loadConfig(ctx).config;
 		} catch (error) {
 			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 		}
