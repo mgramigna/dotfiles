@@ -114,6 +114,22 @@ function runHerdr(args: string[], input?: string): string {
 	return execFileSync("herdr", args, { encoding: "utf8", input });
 }
 
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) return reject(signal.reason ?? new Error("Aborted"));
+		const timeout = setTimeout(cleanupAndResolve, ms);
+		function cleanupAndResolve(): void {
+			if (signal) signal.removeEventListener("abort", cleanupAndReject);
+			resolve();
+		}
+		function cleanupAndReject(): void {
+			clearTimeout(timeout);
+			reject(signal?.reason ?? new Error("Aborted"));
+		}
+		signal?.addEventListener("abort", cleanupAndReject, { once: true });
+	});
+}
+
 function parsePaneId(json: string): string {
 	const parsed = JSON.parse(json) as { result?: { pane?: { pane_id?: string } } };
 	const paneId = parsed.result?.pane?.pane_id;
@@ -125,7 +141,25 @@ function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-async function runExecutorInHerdr(task: string, plan: string, config: TrioConfig, ctx: ExtensionContext): Promise<string> {
+function getPaneAgentStatus(paneId: string): string | undefined {
+	const parsed = JSON.parse(runHerdr(["pane", "list"])) as { result?: { panes?: Array<{ pane_id?: string; agent_status?: string }> } };
+	const pane = parsed.result?.panes?.find((candidate) => candidate.pane_id === paneId);
+	if (!pane) throw new Error(`Trio executor pane disappeared: ${paneId}`);
+	return pane.agent_status;
+}
+
+async function waitForExecutor(paneId: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
+	const startedAt = Date.now();
+	let lastStatus: string | undefined;
+	while (Date.now() - startedAt < timeoutMs) {
+		lastStatus = getPaneAgentStatus(paneId);
+		if (lastStatus === "done" || lastStatus === "idle" || lastStatus === "blocked") return lastStatus;
+		await sleep(10_000, signal);
+	}
+	throw new Error(`Timed out waiting for Trio executor pane ${paneId} after ${Math.round(timeoutMs / 1000)}s (last status: ${lastStatus ?? "unknown"})`);
+}
+
+async function runExecutorInHerdr(task: string, plan: string, config: TrioConfig, ctx: ExtensionContext, signal?: AbortSignal): Promise<string> {
 	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Trio executor requires running inside herdr (HERDR_ENV=1)");
 	const paneId = parsePaneId(runHerdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
 	const modelArg = `${config.executor.provider}/${config.executor.model}${config.executor.thinkingLevel ? `:${config.executor.thinkingLevel}` : ""}`;
@@ -137,9 +171,9 @@ async function runExecutorInHerdr(task: string, plan: string, config: TrioConfig
 		executorPrompt(task, plan, config),
 	].map(shellQuote).join(" ");
 	runHerdr(["pane", "run", paneId, command]);
-	runHerdr(["wait", "agent-status", paneId, "--status", "done", "--timeout", "1200000"]);
+	const status = await waitForExecutor(paneId, 1_200_000, signal);
 	const transcript = runHerdr(["pane", "read", paneId, "--source", "recent-unwrapped", "--lines", "240"]);
-	ctx.ui.notify(`Trio executor finished in pane ${paneId}.`, "info");
+	ctx.ui.notify(`Trio executor reached ${status} in pane ${paneId}.`, status === "blocked" ? "warning" : "info");
 	return transcript;
 }
 
@@ -239,10 +273,10 @@ export default function trioExtension(pi: ExtensionAPI): void {
 			label: "Delegate to Trio Executor",
 			description: "Run the configured Trio executor in a Herdr agent pane with the /impl-review prompt.",
 			parameters: Type.Object({ plan: Type.String() }),
-			async execute(_id, params, _signal, _onUpdate, ctx) {
+			async execute(_id, params, signal, _onUpdate, ctx) {
 				const currentTask = task;
 				if (!currentTask) throw new Error("No active Trio task");
-				const transcript = await runExecutorInHerdr(currentTask, params.plan, requireConfig(), ctx);
+				const transcript = await runExecutorInHerdr(currentTask, params.plan, requireConfig(), ctx, signal);
 				return { content: [{ type: "text", text: `Executor finished. Review the transcript and working tree, request another executor pass if needed, otherwise commit the result.\n\nExecutor transcript:\n${transcript}` }], details: { pane: "herdr" } };
 			},
 		});
