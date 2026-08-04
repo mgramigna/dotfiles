@@ -45,12 +45,14 @@ const REFERENCE_REPO_ROOTS = [resolve(homedir(), ".local/share/pi/references")];
 
 export default function (pi: ExtensionAPI) {
 	const clients = new Map<string, TypeScriptLspClient>();
+	let disabled = false;
 	let lastHealth = "not started";
 	let lastCrash: string | undefined;
 	const diagnosticState = new Map<string, DiagnosticState>();
 	const pendingReports = new Map<string, NodeJS.Timeout>();
 
 	function getClient(ctx: ExtensionContext, filePath?: string): TypeScriptLspClient {
+		if (disabled) throw new Error("TypeScript native LSP diagnostics are disabled for this session");
 		const root = discoverProjectRoot(filePath ?? ctx.cwd, ctx.cwd);
 		const typescript = findInstalledTypeScript(root);
 		if (!typescript || !isTypeScript7OrNewer(typescript.version)) {
@@ -79,6 +81,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function scheduleDiagnostics(ctx: ExtensionContext, filePath: string) {
+		if (disabled) return;
 		if (!isTypeScriptLike(filePath)) return;
 		const absolutePath = resolve(ctx.cwd, filePath);
 		if (isIgnoredDiagnosticPath(absolutePath)) return;
@@ -127,6 +130,10 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function updateStatus(ctx: ExtensionContext) {
+		if (disabled) {
+			ctx.ui.setStatus?.("typescript-lsp", ctx.ui.theme.fg("dim", "ts-lsp: disabled"));
+			return;
+		}
 		const errorCount = [...diagnosticState.values()].reduce((total, state) => {
 			if (isIgnoredDiagnosticPath(state.path)) return total;
 			return total + state.diagnostics.filter((d) => d.severity === ERROR).length;
@@ -169,18 +176,31 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(text, text.includes("failed") ? "warning" : "info");
 	};
 
+	const runTypescriptLspDisable = async (ctx: any) => {
+		disabled = true;
+		lastHealth = "disabled by /typescript-lsp disable";
+		for (const timer of pendingReports.values()) clearTimeout(timer);
+		pendingReports.clear();
+		diagnosticState.clear();
+		await Promise.all([...clients.values()].map((client) => client.stop()));
+		clients.clear();
+		updateStatus(ctx);
+		ctx.ui.notify("TypeScript native LSP diagnostics disabled for this session.", "info");
+	};
+
 	const sendTypescriptLspDiagnostics = (ctx: any) => {
 		pi.sendMessage({ customType: "typescript-lsp-diagnostics", content: currentDiagnosticsText(), display: true }, { triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 	};
 
 	pi.registerCommand("typescript-lsp", {
-		description: "TypeScript LSP commands: diagnostics, refresh [--hard] [paths...], doctor",
+		description: "TypeScript LSP commands: diagnostics, refresh [--hard] [paths...], doctor, disable",
 		getArgumentCompletions(prefix) {
 			const items = [
 				{ value: "diagnostics", label: "diagnostics", description: "Inject current diagnostics into the conversation" },
 				{ value: "refresh", label: "refresh", description: "Refresh diagnostics" },
 				{ value: "refresh --hard", label: "refresh --hard", description: "Restart LSP and refresh diagnostics" },
 				{ value: "doctor", label: "doctor", description: "Check extension and language-server health" },
+				{ value: "disable", label: "disable", description: "Stop the language server and disable diagnostics for this session" },
 			];
 			const filtered = items.filter((item) => item.value.startsWith(prefix));
 			return filtered.length > 0 ? filtered : null;
@@ -190,7 +210,8 @@ export default function (pi: ExtensionAPI) {
 			if (!command || command === "diagnostics") return sendTypescriptLspDiagnostics(ctx);
 			if (command === "refresh") return runTypescriptLspRefresh(rest.join(" "), ctx);
 			if (command === "doctor") return runTypescriptLspDoctor(ctx);
-			ctx.ui.notify("Usage: /typescript-lsp diagnostics | /typescript-lsp refresh [--hard] [paths...] | /typescript-lsp doctor", "warning");
+			if (command === "disable") return runTypescriptLspDisable(ctx);
+			ctx.ui.notify("Usage: /typescript-lsp diagnostics | /typescript-lsp refresh [--hard] [paths...] | /typescript-lsp doctor | /typescript-lsp disable", "warning");
 		},
 	});
 
@@ -232,6 +253,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	async function doctor(ctx: ExtensionContext): Promise<string> {
+		if (disabled) {
+			return [
+				"TypeScript native LSP diagnostics: disabled",
+				`cwd: ${ctx.cwd}`,
+				`state: ${lastHealth}`,
+				"reason: disabled by /typescript-lsp disable for this session",
+			].join("\n");
+		}
 		try {
 			const root = discoverProjectRoot(ctx.cwd, ctx.cwd);
 			const typescript = findInstalledTypeScript(root);
@@ -270,6 +299,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	async function refreshDiagnostics(ctx: ExtensionContext, paths?: string[], hard = false): Promise<string> {
+		if (disabled) return "TypeScript LSP diagnostics are disabled for this session. Restart pi to re-enable them.";
 		try {
 			for (const timer of pendingReports.values()) clearTimeout(timer);
 			pendingReports.clear();
@@ -317,6 +347,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function currentDiagnosticsText(): string {
+		if (disabled) return `TypeScript native LSP diagnostics are disabled. Health: ${lastHealth}.`;
 		const states = [...diagnosticState.values()]
 			.filter((state) => !isIgnoredDiagnosticPath(state.path))
 			.map((state) => ({ ...state, diagnostics: state.diagnostics.filter((d) => d.severity === ERROR) }))
