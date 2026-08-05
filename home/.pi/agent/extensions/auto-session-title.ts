@@ -1,8 +1,6 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-const PROVIDER = "openai-codex";
-const MODEL_ID = "gpt-5.4-mini";
+import { getPreferredModel } from "../shared/model-prefs";
 const MAX_PROMPT_CHARS = 4_000;
 const MAX_TITLE_CHARS = 60;
 
@@ -35,14 +33,11 @@ function cleanTitle(raw: string): string | undefined {
 }
 
 async function generateTitle(prompt: string, ctx: ExtensionContext): Promise<string | undefined> {
-	const model = ctx.modelRegistry.find(PROVIDER, MODEL_ID);
-	if (!model) return undefined;
-
-	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-	if (!auth.ok || !auth.apiKey) return undefined;
+	const preferred = await getPreferredModel(ctx, "small");
+	if (!preferred) return undefined;
 
 	const response = await complete(
-		model,
+		preferred.model,
 		{
 			messages: [
 				{
@@ -58,9 +53,9 @@ async function generateTitle(prompt: string, ctx: ExtensionContext): Promise<str
 			],
 		},
 		{
-			apiKey: auth.apiKey,
-			headers: auth.headers,
-			reasoningEffort: "low",
+			apiKey: preferred.auth.apiKey,
+			headers: preferred.auth.headers,
+			reasoningEffort: preferred.reasoningEffort,
 		},
 	);
 
