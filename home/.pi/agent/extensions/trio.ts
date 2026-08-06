@@ -16,6 +16,7 @@ import { autocompleteSelect } from "../shared/autocomplete-select";
 const CONFIG_FILE = "trio.json";
 const SPAWN_TOOL = "trio_spawn_executor";
 const POLL_TOOL = "trio_poll_executor";
+const DUO_SPAWN_TOOL = "duo_spawn_implementer";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const CONFIG_THINKING_LEVELS = [...THINKING_LEVELS, "max"] as const;
 const PLANNER_TOOLS = [
@@ -52,7 +53,13 @@ type ExecutorRun = {
 const spawnSchema = Type.Object({
 	instructions: Type.String({ description: "Focused implementation instructions for the executor." }),
 });
+
+const duoSpawnSchema = Type.Object({
+	instructions: Type.String({ description: "Precise implementation instructions for the Herdr implementer." }),
+	context: Type.Optional(Type.String({ description: "Optional original user request or extra context to include in the implementer prompt." })),
+});
 type SpawnInput = Static<typeof spawnSchema>;
+type DuoSpawnInput = Static<typeof duoSpawnSchema>;
 
 const pollSchema = Type.Object({
 	paneId: Type.String({ description: "Herdr pane id returned by trio_spawn_executor." }),
@@ -192,6 +199,19 @@ Planner delegation:
 ${instructions}`;
 }
 
+function implementerPrompt(instructions: string, context?: string): string {
+	return `You are the Duo implementer. Implement the delegated slice in this working tree.
+
+Hard requirements:
+- Do not commit.
+- Run relevant tests/typechecks.
+- Do not run overseer review unless explicitly asked by the delegating agent.
+- Finish with a concise summary and validations run.
+
+${context?.trim() ? `Context from delegating agent/user:\n${context.trim()}\n\n` : ""}Implementation instructions:
+${instructions}`;
+}
+
 function plannerPrompt(task: string): string {
 	return `You are the Trio planner.
 
@@ -228,6 +248,19 @@ export default function trio(pi: ExtensionAPI): void {
 		const model = ctx.modelRegistry.find(role.provider, role.model);
 		if (!model) throw new Error(`Configured model not available: ${role.provider}/${role.model}`);
 		return model;
+	}
+
+	async function spawnExecutor(prompt: string, name: string, signal: AbortSignal | undefined, ctx: ExtensionContext): Promise<{ paneId: string; status: string }> {
+		if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Duo/Trio requires running inside herdr");
+		const cfg = requireConfig();
+		const paneId = paneIdFromSplit(herdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
+		const modelArg = `${cfg.executor.provider}/${cfg.executor.model}${cfg.executor.thinkingLevel ? `:${cfg.executor.thinkingLevel}` : ""}`;
+		const command = ["pi", "--provider", cfg.executor.provider, "--model", modelArg, "--name", name, prompt].map(quote).join(" ");
+		herdr(["pane", "run", paneId, command]);
+		const status = await waitForStarted(paneId, signal);
+		runs.set(paneId, { paneId, startedAt: Date.now() });
+		ctx.ui.notify(`${name} started in ${paneId}`, "info");
+		return { paneId, status };
 	}
 
 	async function selectModel(ctx: ExtensionContext, role: RoleConfig): Promise<void> {
@@ -293,16 +326,23 @@ export default function trio(pi: ExtensionAPI): void {
 		parameters: spawnSchema,
 		async execute(_id, params: SpawnInput, signal, _onUpdate, ctx) {
 			if (!task) throw new Error("No active Trio task");
-			if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) throw new Error("Trio requires running inside herdr");
-			const cfg = requireConfig();
-			const paneId = paneIdFromSplit(herdr(["pane", "split", process.env.HERDR_PANE_ID, "--direction", "right", "--no-focus"]));
-			const modelArg = `${cfg.executor.provider}/${cfg.executor.model}${cfg.executor.thinkingLevel ? `:${cfg.executor.thinkingLevel}` : ""}`;
-			const command = ["pi", "--provider", cfg.executor.provider, "--model", modelArg, "--name", "trio executor", executorPrompt(task, params.instructions)].map(quote).join(" ");
-			herdr(["pane", "run", paneId, command]);
-			const status = await waitForStarted(paneId, signal);
-			runs.set(paneId, { paneId, startedAt: Date.now() });
-			ctx.ui.notify(`Trio executor started in ${paneId}`, "info");
+			const { paneId, status } = await spawnExecutor(executorPrompt(task, params.instructions), "trio executor", signal, ctx);
 			return { content: [{ type: "text", text: `Executor started in Herdr pane ${paneId} with status ${status}. Poll this pane with ${POLL_TOOL}.` }], details: { paneId, status } };
+		},
+	});
+
+	pi.registerTool({
+		name: DUO_SPAWN_TOOL,
+		label: "Duo: Spawn Implementer",
+		description: "Spawn a configured Duo implementer in a Herdr pane for delegated implementation. Skips the Trio planner and overseer workflow.",
+		parameters: duoSpawnSchema,
+		async execute(_id, params: DuoSpawnInput, signal, _onUpdate, ctx) {
+			const loaded = loadConfig(ctx);
+			config = loaded.config;
+			if (!config) throw new Error("Duo is not configured. Run /trio setup to choose the implementer model.");
+			resolveModel(ctx, config.executor);
+			const { paneId, status } = await spawnExecutor(implementerPrompt(params.instructions, params.context), "duo implementer", signal, ctx);
+			return { content: [{ type: "text", text: `Duo implementer started in Herdr pane ${paneId} with status ${status}. Poll this pane with ${POLL_TOOL} if you want its recent transcript when it finishes.` }], details: { paneId, status } };
 		},
 	});
 
@@ -343,6 +383,32 @@ export default function trio(pi: ExtensionAPI): void {
 		await pi.sendMessage({ customType: "trio-kickoff", content: `Trio started: ${request}`, display: true }, { triggerTurn: false, deliverAs: "followUp" });
 		await pi.sendMessage({ customType: "trio-instructions", content: plannerPrompt(request), display: false }, { triggerTurn: true, deliverAs: "followUp" });
 	}
+
+	pi.registerCommand("duo", {
+		description: "Ask the current agent to delegate implementation to a Duo Herdr implementer",
+		handler: async (args, ctx) => {
+			try {
+				const request = args.trim();
+				if (!request) return ctx.ui.notify("Usage: /duo <delegation request>", "info");
+				const loaded = loadConfig(ctx);
+				config = loaded.config;
+				if (!config) return void (await setup(ctx));
+				resolveModel(ctx, config.executor);
+				await pi.sendMessage({
+					customType: "duo-delegation-request",
+					content: `The user wants you to delegate implementation with Duo.
+
+Interpret the request below in light of the current conversation and repository context. If you already have enough context, call ${DUO_SPAWN_TOOL} with precise implementation instructions for the implementer and include any necessary summarized context. If you do not have enough context, ask concise clarification questions or investigate first. Do not spawn until the implementer prompt would be actionable.
+
+User Duo request:
+${request}`,
+					display: true,
+				}, { triggerTurn: true, deliverAs: "followUp" });
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			}
+		},
+	});
 
 	pi.registerCommand("trio", {
 		description: "Planner/executor workflow with a read-only planner and Herdr executor",
