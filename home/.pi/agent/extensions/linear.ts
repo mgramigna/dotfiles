@@ -24,6 +24,16 @@ interface LinearIssue {
 	assignee?: { id: string; name: string; email?: string | null } | null;
 	creator?: { id: string; name: string; email?: string | null } | null;
 	labels?: { nodes?: Array<{ id: string; name: string }> } | null;
+	parent?: { id: string; identifier: string; title: string; url: string } | null;
+	children?: {
+		nodes?: Array<{
+			id: string;
+			identifier: string;
+			title: string;
+			url: string;
+			state?: { id: string; name: string; type?: string | null } | null;
+		}>;
+	} | null;
 	comments?: {
 		nodes?: Array<{
 			id: string;
@@ -101,6 +111,8 @@ const issueFields = `
 	assignee { id name email }
 	creator { id name email }
 	labels { nodes { id name } }
+	parent { id identifier title url }
+	children(first: 20) { nodes { id identifier title url state { id name type } } }
 	comments(first: 20) { nodes { id body createdAt user { id name email } } }
 `;
 
@@ -124,6 +136,12 @@ async function getIssueByKey(issueKey: string): Promise<LinearIssue> {
 
 function formatIssue(issue: LinearIssue): string {
 	const labels = issue.labels?.nodes?.map((label) => label.name).join(", ") || "none";
+	const parent = issue.parent ? `${issue.parent.identifier}: ${issue.parent.title} (${issue.parent.url})` : "none";
+	const children = issue.children?.nodes?.length
+		? issue.children.nodes
+				.map((child) => `- ${child.identifier}: ${child.title} [${child.state?.name || "unknown"}] (${child.url})`)
+				.join("\n")
+		: "none";
 	const comments = issue.comments?.nodes?.length
 		? issue.comments.nodes
 				.map((comment) => `- ${comment.user?.name || "Unknown"} (${comment.createdAt}):\n${comment.body}`)
@@ -138,6 +156,9 @@ function formatIssue(issue: LinearIssue): string {
 		`Assignee: ${issue.assignee?.name || "unassigned"}`,
 		`Priority: ${issue.priority ?? "none"}`,
 		`Labels: ${labels}`,
+		`Parent: ${parent}`,
+		"Sub-issues:",
+		children,
 		`Created: ${issue.createdAt}`,
 		`Updated: ${issue.updatedAt}`,
 		"",
@@ -194,9 +215,42 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "linear_create_subissue",
+		label: "Linear: Create Sub-issue",
+		description: "Create a Linear sub-issue under an existing parent issue key such as DEV-123.",
+		parameters: Type.Object({
+			parentIssueKey: Type.String({ description: "Parent Linear issue key, e.g. DEV-123" }),
+			title: Type.String(),
+			description: Type.Optional(Type.String({ description: "Markdown issue description" })),
+			priority: Type.Optional(Type.Number({ description: "Linear priority number, if desired. Defaults to Linear's sub-issue inheritance behavior." })),
+			assigneeId: Type.Optional(Type.String()),
+			stateId: Type.Optional(Type.String()),
+		}),
+		async execute(_toolCallId, params) {
+			const parent = await getIssueByKey(params.parentIssueKey);
+			if (!parent.team?.id) throw new Error(`Linear parent issue ${parent.identifier} has no team`);
+			const input: Record<string, unknown> = {
+				teamId: parent.team.id,
+				parentId: parent.id,
+				title: params.title,
+				description: params.description,
+			};
+			for (const key of ["priority", "assigneeId", "stateId"] as const) {
+				if (params[key] !== undefined) input[key] = params[key];
+			}
+			const data = await linearGraphql<{ issueCreate: { success: boolean; issue?: LinearIssue } }>(
+				`mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { ${issueFields} } } }`,
+				{ input },
+			);
+			if (!data.issueCreate.success || !data.issueCreate.issue) throw new Error("Linear issueCreate failed");
+			return { content: [{ type: "text", text: formatIssue(data.issueCreate.issue) }], details: data.issueCreate.issue };
+		},
+	});
+
+	pi.registerTool({
 		name: "linear_update_issue",
 		label: "Linear: Update Issue",
-		description: "Update a Linear issue title, description, priority, assigneeId, or stateId by issue key.",
+		description: "Update a Linear issue title, description, priority, assigneeId, stateId, or parentIssueKey by issue key.",
 		parameters: Type.Object({
 			issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
 			title: Type.Optional(Type.String()),
@@ -204,6 +258,7 @@ export default function (pi: ExtensionAPI) {
 			priority: Type.Optional(Type.Number()),
 			assigneeId: Type.Optional(Type.String()),
 			stateId: Type.Optional(Type.String()),
+			parentIssueKey: Type.Optional(Type.String({ description: "Parent Linear issue key to make this issue a sub-issue, e.g. DEV-123" })),
 		}),
 		async execute(_toolCallId, params) {
 			const issue = await getIssueByKey(params.issueKey);
@@ -211,6 +266,7 @@ export default function (pi: ExtensionAPI) {
 			for (const key of ["title", "description", "priority", "assigneeId", "stateId"] as const) {
 				if (params[key] !== undefined) input[key] = params[key];
 			}
+			if (params.parentIssueKey !== undefined) input.parentId = params.parentIssueKey;
 			const data = await linearGraphql<{ issueUpdate: { success: boolean; issue?: LinearIssue } }>(
 				`mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${issueFields} } } }`,
 				{ id: issue.id, input },
