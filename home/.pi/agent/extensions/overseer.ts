@@ -58,6 +58,11 @@ const HELP = `Overseer commands:
 - /overseer review            Ask the agent to run the overseer_review tool for all local changes: staged, unstaged, and untracked files.
 - /overseer review --pr <url|number>
                            Ask the agent to run the overseer_review tool for a GitHub pull request diff fetched with gh.
+- /overseer rereview          Ask the agent to run the overseer_rereview tool using the latest prior artifact as context.
+- /overseer rereview --artifact <path>
+                           Ask the agent to run overseer_rereview using a specific prior artifact.
+- /overseer rereview --pr <url|number>
+                           Rereview a GitHub pull request diff fetched with gh.
 - /overseer status            Show the latest overseer run status, artifact path, log path, and tail command.
 - /overseer doctor            Check overseer setup and config.
 - /overseer setup             Interactively create an overseer config if one does not exist.
@@ -250,6 +255,15 @@ type ReviewPullRequest = {
 
 type ReviewSubject = ReviewDiff | ReviewPullRequest;
 
+type PreviousReviewContext = {
+	artifactPath: string;
+	decision?: ReviewDecision;
+	status?: ReviewStatus;
+	counts?: ReturnType<typeof confidenceCounts>;
+	summary?: string;
+	findings?: string;
+};
+
 async function execTextAllowExit(command: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
 	try {
 		return await execText(command, args, cwd, timeout);
@@ -291,18 +305,21 @@ function timestamp(): string {
 	return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-async function reviewPromptBody(ctx: ExtensionContext, reviewSubject?: ReviewSubject): Promise<string> {
+async function reviewPromptBody(ctx: ExtensionContext, reviewSubject?: ReviewSubject, previousReview?: PreviousReviewContext): Promise<string> {
 	const subject = reviewSubject ?? (await currentReviewDiff(ctx.cwd));
 	const { changed, stat, diff } = subject;
 	return [
-		"# Overseer review request",
+		previousReview ? "# Overseer rereview request" : "# Overseer review request",
 		"",
 		`Working directory: ${ctx.cwd}`,
 		reviewSubjectLabel(subject),
 		"",
-		subject.kind === "pull_request"
-			? "Review the GitHub pull request diff below. You may inspect repository files to verify or falsify findings, but do not edit anything."
-			: "Review the selected uncommitted diff below. You may inspect repository files to verify or falsify findings, but do not edit anything.",
+		previousReview
+			? "This is a rereview after the implementation agent attempted fixes. Use the previous review context below, then inspect the current diff and repository files to verify whether prior findings are resolved and whether the fixes introduced new issues. Do not edit anything."
+			: subject.kind === "pull_request"
+				? "Review the GitHub pull request diff below. You may inspect repository files to verify or falsify findings, but do not edit anything."
+				: "Review the selected uncommitted diff below. You may inspect repository files to verify or falsify findings, but do not edit anything.",
+		...(previousReview ? previousReviewPromptSection(previousReview) : []),
 		"",
 		"## Changed files",
 		changed.trim() ? changed.split("\n").map((file) => `- ${file}`).join("\n") : "No changed files were reported by git diff --name-only.",
@@ -318,6 +335,29 @@ async function reviewPromptBody(ctx: ExtensionContext, reviewSubject?: ReviewSub
 		"```",
 		"",
 	].join("\n");
+}
+
+function previousReviewPromptSection(previousReview: PreviousReviewContext): string[] {
+	return [
+		"",
+		"## Previous overseer review",
+		"",
+		`Previous artifact: ${previousReview.artifactPath}`,
+		...(previousReview.decision ? [`Previous decision: ${previousReview.decision}`] : []),
+		...(previousReview.status ? [`Previous status: ${previousReview.status}`] : []),
+		...(previousReview.summary ? [`Previous summary: ${previousReview.summary}`] : []),
+		"",
+		"Previous findings:",
+		"",
+		previousReview.findings?.trim() || "The previous artifact recorded no defensible issues.",
+		"",
+		"## Rereview instructions",
+		"",
+		"For each previous finding, determine whether it is RESOLVED, STILL VALID, or OBSOLETE by inspecting the current code/diff; do not trust the previous conclusion blindly.",
+		"Report any STILL VALID previous finding using the normal finding format.",
+		"Also review the current diff for new issues introduced by the attempted fix.",
+		"If all previous findings are resolved or obsolete and no new issues exist, say exactly: \"I found no defensible issues.\"",
+	];
 }
 
 function reviewSubjectLabel(subject: ReviewSubject): string {
@@ -402,7 +442,7 @@ async function pullRequestReviewDiff(cwd: string, ref: string): Promise<ReviewPu
 	};
 }
 
-async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewSubject?: ReviewSubject, timeoutMs = REVIEW_WAIT_TIMEOUT_MS, signal?: AbortSignal) {
+async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, reviewSubject?: ReviewSubject, timeoutMs = REVIEW_WAIT_TIMEOUT_MS, signal?: AbortSignal, previousReview?: PreviousReviewContext) {
 	const selectedDiff = reviewSubject ?? (await currentReviewDiff(ctx.cwd));
 	if (!hasReviewableDiff(selectedDiff)) return { skipped: true as const, message: selectedDiff.kind === "pull_request" ? EMPTY_PR_DIFF_MESSAGE : EMPTY_DIFF_MESSAGE };
 	await mkdir(RUN_DIR, { recursive: true });
@@ -411,13 +451,15 @@ async function runHeadlessReview(ctx: ExtensionContext, artifactPath?: string, r
 	const path = artifactPath || join(RUN_DIR, `artifact-${runTimestamp}.json`);
 	const logPath = join(RUN_DIR, `run-${runTimestamp}.log`);
 	await mkdir(dirname(path), { recursive: true });
-	await writeFile(promptPath, await reviewPromptBody(ctx, selectedDiff), "utf8");
+	await writeFile(promptPath, await reviewPromptBody(ctx, selectedDiff, previousReview), "utf8");
 	await writeFile(logPath, `Overseer review started at ${new Date().toISOString()}\nArtifact: ${path}\nPrompt: ${promptPath}\n\n`, "utf8");
 	const startedAt = new Date().toISOString();
 	const startedArtifact = {
 		version: 1,
+		reviewKind: previousReview ? "rereview" : "initial",
 		cwd: ctx.cwd,
 		subject: selectedDiff.kind === "pull_request" ? { kind: selectedDiff.kind, ref: selectedDiff.ref, url: selectedDiff.url } : { kind: selectedDiff.kind },
+		...(previousReview ? { previousReview: { artifactPath: previousReview.artifactPath, decision: previousReview.decision, status: previousReview.status, counts: previousReview.counts, summary: previousReview.summary } } : {}),
 		promptPath,
 		logPath,
 		createdAt: startedAt,
@@ -598,6 +640,27 @@ async function latestArtifactPath(): Promise<string | undefined> {
 	}
 }
 
+async function loadPreviousReviewContext(artifactPath?: string): Promise<PreviousReviewContext> {
+	const path = artifactPath ?? await latestArtifactPath();
+	if (!path) throw new Error(`No previous overseer artifact found in ${RUN_DIR}. Run overseer_review first or pass previousArtifactPath.`);
+	const raw = await readFile(path, "utf8");
+	const artifact = JSON.parse(raw) as {
+		decision?: ReviewDecision;
+		status?: ReviewStatus;
+		counts?: ReturnType<typeof confidenceCounts>;
+		summary?: string;
+		findings?: string;
+	};
+	return {
+		artifactPath: path,
+		decision: artifact.decision,
+		status: artifact.status,
+		counts: artifact.counts,
+		summary: artifact.summary,
+		findings: artifact.findings,
+	};
+}
+
 async function runStatus(): Promise<string> {
 	const artifactPath = await latestArtifactPath();
 	if (!artifactPath) return `No overseer artifacts found in ${RUN_DIR}.`;
@@ -727,6 +790,34 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "overseer_rereview",
+		label: "Overseer rereview",
+		description: "Run headless overseer review with context from a previous overseer artifact, checking whether prior findings were resolved and whether fixes introduced new issues.",
+		parameters: Type.Object({
+			previousArtifactPath: Type.Optional(Type.String({ description: "Previous overseer artifact JSON to use as rereview context. Defaults to the latest artifact under ~/.pi/agent/overseer." })),
+			artifactPath: Type.Optional(Type.String({ description: "Path to write the new rereview artifact JSON. Defaults under ~/.pi/agent/overseer." })),
+			pr: Type.Optional(Type.String({ description: "GitHub PR URL or number to rereview with gh pr diff instead of local changes." })),
+		}),
+		async execute(_toolCallId: string, params: { previousArtifactPath?: string; artifactPath?: string; pr?: string }, signal: AbortSignal, _onUpdate: unknown, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+			const previousReview = await loadPreviousReviewContext(params.previousArtifactPath);
+			const subject = params.pr ? await pullRequestReviewDiff(ctx.cwd, params.pr) : undefined;
+			const result = await runHeadlessReview(ctx, params.artifactPath, subject, REVIEW_WAIT_TIMEOUT_MS, signal, previousReview);
+			if (result.skipped) {
+				return {
+					content: [{ type: "text", text: result.message }],
+					details: { status: "skipped", reason: "empty_current_git_diff", previousArtifactPath: previousReview.artifactPath },
+				};
+			}
+			const { path, artifact } = result;
+			const summary = artifact.findings || "I found no defensible issues.";
+			return {
+				content: [{ type: "text", text: `Overseer rereview ${friendlyReviewStatus(artifact.status)}. Artifact: ${path}\nPrevious artifact: ${previousReview.artifactPath}\nLog: ${artifact.logPath}\n\n${summary}` }],
+				details: { path, logPath: artifact.logPath, status: artifact.status, counts: artifact.counts, findings: artifact.findings, previousArtifactPath: previousReview.artifactPath },
+			};
+		},
+	});
+
+	pi.registerTool({
 		name: "overseer_request_review",
 		label: "Request overseer review",
 		description: "Ask overseer for a compact approve/request_changes/non_blocking_comments review decision without returning full findings.",
@@ -802,11 +893,14 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("overseer", {
-		description: "Overseer adversarial review: review [--pr <url|number>], status, doctor, setup, help",
+		description: "Overseer adversarial review: review/rereview [--pr <url|number>], status, doctor, setup, help",
 		getArgumentCompletions(prefix: string) {
 			const items = [
 				{ value: "review", label: "review", description: "Review all local changes, including untracked files" },
 				{ value: "review --pr ", label: "review --pr", description: "Review a GitHub PR with gh" },
+				{ value: "rereview", label: "rereview", description: "Rereview all local changes with previous overseer context" },
+				{ value: "rereview --artifact ", label: "rereview --artifact", description: "Rereview using a specific previous artifact" },
+				{ value: "rereview --pr ", label: "rereview --pr", description: "Rereview a GitHub PR with gh" },
 				{ value: "status", label: "status", description: "Show latest overseer run status and log path" },
 				{ value: "doctor", label: "doctor", description: "Check overseer setup" },
 				{ value: "setup", label: "setup", description: "Configure overseer" },
@@ -841,13 +935,21 @@ export default function (pi: ExtensionAPI) {
 			}
 
 
-			if (command !== "review") {
+			if (command !== "review" && command !== "rereview") {
 				ctx.ui.notify(HELP, "warning");
 				return;
 			}
 
 			const prFlagIndex = commandArgs.findIndex((token) => token === "--pr" || token === "--github-pr");
 			const prRef = prFlagIndex >= 0 ? commandArgs[prFlagIndex + 1] : commandArgs.find((token) => /^https:\/\/github\.com\/.+\/pull\/\d+/.test(token));
+			const artifactFlagIndex = commandArgs.findIndex((token) => token === "--artifact" || token === "--previous-artifact" || token === "--previousArtifactPath");
+			const previousArtifactPath = artifactFlagIndex >= 0 ? commandArgs[artifactFlagIndex + 1] : undefined;
+			if (command === "rereview") {
+				const paramsObject = { ...(prRef ? { pr: prRef } : {}), ...(previousArtifactPath ? { previousArtifactPath } : {}) };
+				const params = Object.keys(paramsObject).length ? ` with ${JSON.stringify(paramsObject)}` : " for the current local changes using the latest prior artifact";
+				pi.sendUserMessage(`Run the overseer_rereview tool${params}. Do not perform any other work before calling the tool.`, { deliverAs: "followUp" });
+				return;
+			}
 			const params = prRef ? ` with { "pr": ${JSON.stringify(prRef)} }` : " for the current local changes";
 			pi.sendUserMessage(`Run the overseer_review tool${params}. Do not perform any other work before calling the tool.`, { deliverAs: "followUp" });
 		},
