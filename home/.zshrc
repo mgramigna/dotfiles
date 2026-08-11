@@ -13,7 +13,6 @@ export EDITOR="nvim"
 # Aliases
 alias vim="nvim"
 alias vi="/usr/bin/vim"
-alias t="tmux-sessionizer"
 alias cat="bat"
 alias lg="lazygit"
 alias oc="opencode"

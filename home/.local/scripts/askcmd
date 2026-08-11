@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<USAGE
+Usage: askcmd [request...]
+
+Ask pi for a single bash command, review it, and run it only after approval.
+If no request is provided as arguments, askcmd reads a request interactively.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if ! command -v pi >/dev/null 2>&1; then
+    echo "askcmd: pi is not installed or not on PATH" >&2
+    exit 127
+fi
+
+if [[ $# -gt 0 ]]; then
+    request="$*"
+else
+    printf "What shell command do you need? " >&2
+    IFS= read -r request
+fi
+
+if [[ -z "${request//[[:space:]]/}" ]]; then
+    echo "askcmd: empty request" >&2
+    exit 1
+fi
+
+model_args=()
+prefs_path="${PI_AGENT_DIR:-$HOME/.pi/agent}/model-prefs.json"
+if [[ -r "$prefs_path" ]] && command -v python3 >/dev/null 2>&1; then
+    model_spec=$(python3 -c 'import json,sys; p=json.load(open(sys.argv[1])).get("small") or {}; provider=p.get("provider"); model=p.get("modelId"); print(f"{provider}/{model}" if isinstance(provider,str) and isinstance(model,str) and provider and model else "")' "$prefs_path" 2>/dev/null || true)
+    thinking_spec=$(python3 -c 'import json,sys; p=json.load(open(sys.argv[1])).get("small") or {}; thinking=p.get("reasoningEffort"); print(thinking if isinstance(thinking,str) and thinking else "")' "$prefs_path" 2>/dev/null || true)
+    if [[ -n "$model_spec" ]]; then
+        model_args+=(--model "$model_spec")
+    fi
+    if [[ -n "$thinking_spec" ]]; then
+        model_args+=(--thinking "$thinking_spec")
+    fi
+fi
+
+system_prompt="You are a shell-command generator. Your only job is to translate the user request into exactly one bash command suitable for their current machine.
+
+Rules:
+- Output only the command itself.
+- Do not use Markdown, code fences, explanations, comments, or extra text.
+- Do not ask follow-up questions. If details are missing, choose the safest reasonable command.
+- Prefer portable POSIX/bash commands when practical.
+- Never include destructive actions unless the user explicitly requested them. For destructive requests, choose the least destructive safe form and include interactive/safety flags when available.
+- The command will be shown to the user for approval before execution."
+
+prompt="Request: $request
+Current directory: $(pwd)
+Shell: ${SHELL:-unknown}
+OS: $(uname -s 2>/dev/null || echo unknown)"
+
+command_text=$(pi --print \
+    --no-session \
+    --no-tools \
+    --no-extensions \
+    --no-skills \
+    --no-prompt-templates \
+    --no-context-files \
+    --system-prompt "$system_prompt" \
+    "${model_args[@]}" \
+    "$prompt")
+
+# Be tolerant if a model ignores instructions and wraps the command in a fence.
+command_text=$(printf "%s\n" "$command_text" | awk 'NR == 1 && /^```/ { next } /^```$/ { next } { print }')
+command_text=$(printf "%s" "$command_text" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+if [[ -z "$command_text" ]]; then
+    echo "askcmd: pi returned an empty command" >&2
+    exit 1
+fi
+
+printf "\n%s\n\n" "$command_text"
+read -r -p "Run this command? [y/N] " answer
+case "$answer" in
+    [yY]|[yY][eE][sS])
+        exec bash -lc "$command_text"
+        ;;
+    *)
+        echo "Not run."
+        exit 0
+        ;;
+esac
