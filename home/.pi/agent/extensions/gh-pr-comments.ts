@@ -37,11 +37,24 @@ interface GraphQlResponse<T> {
 	data?: T;
 }
 
-interface ReviewThreadsData {
+interface ReviewNode {
+	author?: {
+		login?: string;
+	};
+	body?: string;
+	state?: string;
+	url?: string;
+	createdAt?: string;
+}
+
+interface PrReviewCommentsData {
 	repository?: {
 		pullRequest?: {
 			reviewThreads?: {
 				nodes?: ReviewThreadNode[];
+			};
+			reviews?: {
+				nodes?: ReviewNode[];
 			};
 		};
 	};
@@ -135,7 +148,7 @@ async function getOwnerAndRepo(cwd: string): Promise<{ owner: string; repo: stri
 	return owner && name ? { owner, repo: name } : null;
 }
 
-async function getReviewThreadComments(cwd: string, prNumber: number): Promise<PrComment[]> {
+async function getPrComments(cwd: string, prNumber: number): Promise<PrComment[]> {
 	const repo = await getOwnerAndRepo(cwd);
 	if (!repo) return [];
 
@@ -160,12 +173,21 @@ async function getReviewThreadComments(cwd: string, prNumber: number): Promise<P
 							}
 						}
 					}
+					reviews(first: 100) {
+						nodes {
+							author { login }
+							body
+							state
+							url
+							createdAt
+						}
+					}
 				}
 			}
 		}
 	`;
 
-	const response = await ghJson<GraphQlResponse<ReviewThreadsData>>(
+	const response = await ghJson<GraphQlResponse<PrReviewCommentsData>>(
 		[
 			"api",
 			"graphql",
@@ -181,11 +203,12 @@ async function getReviewThreadComments(cwd: string, prNumber: number): Promise<P
 		cwd,
 	);
 
-	const threads = response?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-	return threads.flatMap((thread, threadIndex) => {
+	const pullRequest = response?.data?.repository?.pullRequest;
+	const threads = pullRequest?.reviewThreads?.nodes ?? [];
+	const inlineComments = threads.flatMap((thread, threadIndex) => {
 		const comments = thread.comments?.nodes ?? [];
 		return comments.map((comment, commentIndex) => ({
-			id: `${threadIndex}:${commentIndex}:${comment.url ?? comment.createdAt ?? comment.body ?? ""}`,
+			id: `thread:${threadIndex}:${commentIndex}:${comment.url ?? comment.createdAt ?? comment.body ?? ""}`,
 			author: comment.author?.login ?? "unknown",
 			body: comment.body ?? "",
 			path: comment.path ?? thread.path,
@@ -195,6 +218,17 @@ async function getReviewThreadComments(cwd: string, prNumber: number): Promise<P
 			resolved: thread.isResolved,
 		}));
 	});
+	const reviewComments = (pullRequest?.reviews?.nodes ?? [])
+		.filter((review) => review.body?.trim())
+		.map((review, reviewIndex) => ({
+			id: `review:${reviewIndex}:${review.url ?? review.createdAt ?? review.body ?? ""}`,
+			author: review.author?.login ?? "unknown",
+			body: review.state ? `[${review.state}] ${review.body}` : (review.body ?? ""),
+			url: review.url,
+			createdAt: review.createdAt,
+		}));
+
+	return [...reviewComments, ...inlineComments];
 }
 
 async function choosePrompt(ctx: ExtensionCommandContext): Promise<string | null> {
@@ -346,7 +380,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const comments = await getReviewThreadComments(gitRoot, pr.number);
+			const comments = await getPrComments(gitRoot, pr.number);
 			if (comments.length === 0) {
 				ctx.ui.notify(`No review comments found on PR #${pr.number}`, "info");
 				return;

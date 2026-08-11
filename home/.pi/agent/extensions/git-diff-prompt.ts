@@ -14,6 +14,48 @@ async function gitDiff(cwd: string, args: string[] = []) {
   return stdout.trimEnd();
 }
 
+async function gitUntrackedDiff(cwd: string) {
+  const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+    cwd,
+    maxBuffer: 50 * 1024 * 1024,
+  });
+
+  const paths = stdout.split("\0").filter(Boolean);
+  const diffs = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const { stdout: diff } = await execFileAsync(
+          "git",
+          ["diff", "--no-ext-diff", "--no-index", "--", "/dev/null", path],
+          { cwd, maxBuffer: 50 * 1024 * 1024 },
+        );
+
+        return diff.trimEnd();
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "stdout" in error &&
+          typeof error.stdout === "string"
+        ) {
+          return error.stdout.trimEnd();
+        }
+
+        throw error;
+      }
+    }),
+  );
+
+  return diffs.filter(Boolean).join("\n\n");
+}
+
+function combineDiffs(sections: Array<[string, string]>) {
+  return sections
+    .map(([title, diff]) => diff && `# ${title}\n\n${diff}`)
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function buildMessage(diff: string, prompt?: unknown) {
   const promptText = typeof prompt === "string" ? prompt.trim() : "";
   const header = promptText.length > 0 ? promptText : "Here is the current git diff:";
@@ -36,9 +78,14 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       await ctx.waitForIdle();
 
-      const diff = await gitDiff(ctx.cwd);
+      const [unstaged, untracked] = await Promise.all([gitDiff(ctx.cwd), gitUntrackedDiff(ctx.cwd)]);
+      const diff = combineDiffs([
+        ["Unstaged changes", unstaged],
+        ["Untracked files", untracked],
+      ]);
+
       if (!diff) {
-        ctx.ui.notify("No unstaged git diff found.", "info");
+        ctx.ui.notify("No unstaged git diff or untracked files found.", "info");
         return;
       }
 
@@ -66,24 +113,24 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       await ctx.waitForIdle();
 
-      const [staged, unstaged] = await Promise.all([
+      const [staged, unstaged, untracked] = await Promise.all([
         gitDiff(ctx.cwd, ["--cached"]),
         gitDiff(ctx.cwd),
+        gitUntrackedDiff(ctx.cwd),
       ]);
 
-      if (!staged && !unstaged) {
-        ctx.ui.notify("No git diff found.", "info");
+      const diff = combineDiffs([
+        ["Staged changes", staged],
+        ["Unstaged changes", unstaged],
+        ["Untracked files", untracked],
+      ]);
+
+      if (!diff) {
+        ctx.ui.notify("No git diff or untracked files found.", "info");
         return;
       }
 
-      const combined = [
-        staged && `# Staged changes\n\n${staged}`,
-        unstaged && `# Unstaged changes\n\n${unstaged}`,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-
-      pi.sendUserMessage(buildMessage(combined, args));
+      pi.sendUserMessage(buildMessage(diff, args));
     },
   });
 }
