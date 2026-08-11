@@ -81,6 +81,7 @@ Additional notes from orchestrator:
    - Include the commit hash/summary for each slice.
    - Mention any checks run or skipped.
    - Mention any remaining blockers, follow-ups, or sub-issues not implemented.
+   - If all slices are complete and committed, mention that `/prd-stack $1` can create the dependent GitHub PR stack when asked.
 
 Rules:
 
