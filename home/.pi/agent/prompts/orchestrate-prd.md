@@ -76,12 +76,19 @@ Additional notes from orchestrator:
 
 7. Continue until all sub-issues are complete.
 
-8. Final report:
+8. Optional stacked PR creation:
+   - Only do this if the user's extra instructions explicitly request stacked PRs after orchestration, e.g. "stack after", "create stacked PRs", "push stack", or "open PRs after".
+   - Do not infer this from ordinary implementation requests.
+   - If requested, after all slices are complete, committed, and the working tree is clean, run the `/prd-stack $1` workflow with any relevant base-branch/PR instructions from `${@:2}`.
+   - If stacked PR creation succeeds, include the stack/PR URLs in the final report.
+   - If it is blocked, report the blocker and leave commits local.
+
+9. Final report:
    - List each sub-issue handled, in order.
    - Include the commit hash/summary for each slice.
    - Mention any checks run or skipped.
    - Mention any remaining blockers, follow-ups, or sub-issues not implemented.
-   - If all slices are complete and committed, mention that `/prd-stack $1` can create the dependent GitHub PR stack when asked.
+   - If stacked PRs were not requested and all slices are complete and committed, mention that `/prd-stack $1` can create the dependent GitHub PR stack when asked.
 
 Rules:
 
@@ -89,5 +96,5 @@ Rules:
 - Keep orchestration state in your own notes/message, not in a separate plan file unless useful.
 - Do not make broad implementation changes yourself unless required to fix orchestration fallout.
 - Do not close GitHub issues unless explicitly instructed.
-- Do not push or create a PR unless explicitly instructed.
+- Do not push or create a PR unless explicitly instructed in the user's extra instructions.
 - Incorporate the user's extra instructions: `${@:2}`.
