@@ -66,7 +66,7 @@ Follow this workflow exactly:
 8. Optionally improve PR metadata if cheap and non-ambiguous:
    - For each PR, use `gh pr edit` to add a concise body with:
      - parent PRD link
-     - sub-issue link
+     - closing sub-issue link if one exists, using GitHub closing syntax such as `Closes #123`
      - dependency note: base PR/branch below it
      - checks already run from orchestration if known
    - Do not invent checks.

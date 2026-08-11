@@ -80,6 +80,7 @@ Additional notes from orchestrator:
    - Only do this if the user's extra instructions explicitly request stacked PRs after orchestration, e.g. "stack after", "create stacked PRs", "push stack", or "open PRs after".
    - Do not infer this from ordinary implementation requests.
    - If requested, after all slices are complete, committed, and the working tree is clean, run the `/prd-stack $1` workflow with any relevant base-branch/PR instructions from `${@:2}`.
+   - Tell `/prd-stack` that each PR description should include a closing issue link (for example `Closes #123`) for the slice issue it completes, if such an issue exists.
    - If stacked PR creation succeeds, include the stack/PR URLs in the final report.
    - If it is blocked, report the blocker and leave commits local.
 
@@ -88,7 +89,7 @@ Additional notes from orchestrator:
    - Include the commit hash/summary for each slice.
    - Mention any checks run or skipped.
    - Mention any remaining blockers, follow-ups, or sub-issues not implemented.
-   - If stacked PRs were not requested and all slices are complete and committed, mention that `/prd-stack $1` can create the dependent GitHub PR stack when asked.
+   - If stacked PRs were not requested and all slices are complete and committed, mention that `/prd-stack $1` can create the dependent GitHub PR stack when asked, and that each PR description should link the issue it closes if one exists.
 
 Rules:
 
