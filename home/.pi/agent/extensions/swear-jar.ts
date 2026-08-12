@@ -3,7 +3,8 @@ import { basename, dirname, extname, join } from "node:path";
 import { homedir } from "node:os";
 
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import type { AutocompleteItem, SelectItem } from "@earendil-works/pi-tui";
+import { autocompleteSelect } from "../shared/autocomplete-select";
 
 const STATUS_KEY = "swear-jar";
 const AGENT_DIR = join(homedir(), ".pi", "agent");
@@ -341,10 +342,33 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				const choices = occurrences.map(formatOccurrence);
-				const choice = await ctx.ui.select("Jump to swear jar entry", choices);
-				if (!choice) return;
+				let selectedIndex: number | undefined;
 
-				const occurrence = occurrences[choices.indexOf(choice)];
+				if (ctx.mode === "tui") {
+					const items: SelectItem[] = occurrences.map((occurrence, index) => {
+						const when = occurrence.timestamp ? new Date(occurrence.timestamp).toLocaleString() : "unknown time";
+						const cwd = occurrence.sessionCwd ?? basename(dirname(occurrence.sessionFile));
+						const count = occurrence.count === 1 ? "1 swear" : `${occurrence.count} swears`;
+						return {
+							value: String(index),
+							label: `${when} • ${count} • ${cwd}`,
+							description: occurrence.preview,
+						};
+					});
+					const selected = await autocompleteSelect(ctx, {
+						title: `Jump to swear jar entry (${items.length})`,
+						items,
+						maxVisible: 10,
+					});
+					if (selected === undefined) return;
+					selectedIndex = Number(selected);
+				} else {
+					const choice = await ctx.ui.select("Jump to swear jar entry", choices);
+					if (!choice) return;
+					selectedIndex = choices.indexOf(choice);
+				}
+
+				const occurrence = selectedIndex === undefined ? undefined : occurrences[selectedIndex];
 				if (occurrence) await switchToOccurrence(ctx, occurrence);
 				return;
 			}
