@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ProviderHeaders } from "@earendil-works/pi-ai";
 import { getAgentDir, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type ReasoningEffort = Exclude<ThinkingLevel, "off" | "xhigh" | "max">;
@@ -15,7 +16,7 @@ export interface ResolvedModelPreference extends ModelPreference {
 	model: NonNullable<ReturnType<ExtensionContext["modelRegistry"]["find"]>>;
 	auth: {
 		apiKey: string;
-		headers?: Record<string, string>;
+		headers?: ProviderHeaders;
 	};
 }
 

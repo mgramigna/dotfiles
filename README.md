@@ -98,6 +98,16 @@ The default Ubuntu setup links:
 - `~/.pi/agent`
 - `~/.local/scripts`
 
+### Pi sequence diagrams
+
+Pi renders supported Mermaid `sequenceDiagram` blocks as compact ASCII diagrams in the terminal, without adding a Mermaid/browser dependency. Ask Pi to diagram a flow naturally, or use:
+
+```text
+/sequence <describe the flow>
+```
+
+The Mermaid source remains in the session and can be copied or pasted into a Mermaid editor. The Pi extension dependencies are pinned to Pi `0.84.1` because this uses its Markdown transformer API; update Pi and these pins together.
+
 On macOS, `./bootstrap link` also links Ghostty, Karabiner, and cmux configs.
 
 Rectangle does not use a simple config path for Stow. The exported Rectangle config is version-controlled at `manual/rectangle/RectangleConfig.json` and can be imported manually from Rectangle.
