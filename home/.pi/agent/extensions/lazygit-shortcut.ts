@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { KeyId } from "@earendil-works/pi-tui";
 
 const SHORTCUT = process.env.PI_LAZYGIT_SHORTCUT || "f2";
-const FALLBACK_SHORTCUT = process.env.PI_LAZYGIT_FALLBACK_SHORTCUT || "ctrl+shift+g";
+const FALLBACK_SHORTCUT = process.env.PI_LAZYGIT_FALLBACK_SHORTCUT || "alt+g";
 
 async function openLazygit(ctx: ExtensionContext) {
 	if (ctx.mode !== "tui") {
