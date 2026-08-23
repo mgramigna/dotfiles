@@ -27,7 +27,6 @@ return {
 				},
 			},
 			{ "saghen/blink.cmp" },
-			{ "yioneko/nvim-vtsls" },
 		},
 		config = function()
 			local diagnostic_icons = {
@@ -100,16 +99,11 @@ return {
 				},
 			})
 
-			vim.lsp.config("vtsls", {
-				settings = {
-					vtsls = {
-						autoUseWorkspaceTsdk = true,
-					},
-					typescript = {
-						tsserver = {
-							maxTsServerMemory = 12288,
-							pluginPaths = { "./node_modules" },
-						},
+			-- tsc watches virtual bundled:// libs, which Neovim cannot parse as filesystem globs.
+			vim.lsp.config("tsc", {
+				capabilities = {
+					workspace = {
+						didChangeWatchedFiles = { dynamicRegistration = false },
 					},
 				},
 			})
@@ -123,7 +117,7 @@ return {
 				"rust_analyzer",
 				"tailwindcss",
 				"texlab",
-				"tsgo",
+				"tsc",
 				"oxlint",
 			})
 		end,
