@@ -79,6 +79,7 @@ check_link opencode "$HOME/.config/opencode/opencode.jsonc" "$ROOT/home/.config/
 check_link tmux "$HOME/.config/tmux" "$ROOT/home/.config/tmux"
 check_link starship "$HOME/.config/starship" "$ROOT/home/.config/starship"
 check_link scripts "$HOME/.local/scripts" "$ROOT/home/.local/scripts"
+check_link pi-agents "$HOME/.pi/agent/agents" "$ROOT/home/.pi/agent/agents"
 
 if [ "$(uname -s)" = "Darwin" ]; then
   check_link ghostty "$HOME/.config/ghostty" "$ROOT/macos/.config/ghostty"
