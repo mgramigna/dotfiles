@@ -1,6 +1,7 @@
 ---
 name: scout
 description: Fast codebase reconnaissance that returns compressed context for the parent agent
+model: openai-codex/gpt-5.6-luna
 thinking: low
 tools: read, fffind, ffgrep, bash
 ---
