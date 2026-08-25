@@ -473,14 +473,14 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate focused research, codebase exploration, planning, or review to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			"Available user agents: researcher (web/docs/source research), scout (codebase reconnaissance), reviewer (independent code review).",
+			"Available user agents: researcher (web/docs/source research), scout (codebase reconnaissance), reviewer (independent code review), implementer (focused implementation and validation).",
 			`Default agent scope is "user" (from ${path.join(getAgentDir(), "agents")}).`,
 			`To enable project-local agents in ${CONFIG_DIR_NAME}/agents, set agentScope: "both" (or "project").`,
 		].join(" "),
 		promptSnippet: "Delegate focused research, exploration, planning, or review to an isolated lightweight agent",
 		promptGuidelines: [
-			"Use subagent for ordinary delegation such as focused research, codebase exploration, and review when an isolated context is useful; choose researcher for web/docs/source research, scout for codebase reconnaissance, and reviewer for independent code review.",
-			"Use Trio only when the user explicitly wants Trio's read-only planner, implementation executor, overseer review, and commit workflow; do not use Trio as a general-purpose subagent.",
+			"Use subagent for focused delegation when an isolated context is useful; choose researcher for web/docs/source research, scout for codebase reconnaissance, reviewer for independent code review, and implementer for tightly scoped implementation and validation.",
+			"Keep orchestration, final review, and commits with the primary agent unless the user explicitly requests another workflow.",
 		],
 		parameters: SubagentParams,
 
