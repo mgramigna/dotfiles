@@ -1,5 +1,5 @@
 ---
-description: Orchestrate serial PRD implementation through herdr sub-agents
+description: Orchestrate serial PRD implementation through subagents
 argument-hint: '<parent GitHub issue URL or issue number> [extra instructions]'
 ---
 
@@ -11,72 +11,57 @@ Extra instructions from the user, if any:
 
 `${@:2}`
 
-Your task is to coordinate a serial implementation through herdr. You are not the implementer unless explicitly needed for orchestration fixes.
+Your task is to coordinate a serial implementation through the `subagent` tool. You are not the implementer unless explicitly needed for orchestration fixes.
 
 Follow this workflow exactly:
 
-1. Load and follow the `herdr` skill before doing any herdr operations.
-   - Confirm `HERDR_ENV=1` before controlling herdr.
-   - If you are not running inside herdr, stop and explain that this workflow requires a herdr-managed pane.
-
-2. Fetch the parent PRD and discover sub-issues:
+1. Fetch the parent PRD and discover sub-issues:
    - Use GitHub CLI (`gh`) where possible.
    - Fetch the parent issue body, comments, labels, state, and metadata.
    - Query the repository issue list for all sub-issues that reference this parent issue/PRD URL or issue number.
    - Include open sub-issues by default. If closed sub-issues are relevant for dependency analysis, inspect them too, but do not reimplement completed work.
    - If the parent issue cannot be resolved or sub-issues are ambiguous, ask for clarification.
 
-3. Determine the implementation order:
+2. Determine the implementation order:
    - Read each sub-issue enough to understand scope and dependencies.
    - Sort slices into a serial order that resolves prerequisites first.
    - Prefer foundational/schema/API/shared-code work before dependent UI/integration/testing slices.
    - Present the ordered list briefly before launching the first sub-agent.
 
-4. Implement one slice at a time using a herdr sub-agent:
+3. Implement one slice at a time using the `subagent` tool:
    - Do not run slices in parallel.
-   - Launch exactly one new pi agent for the current slice in a new herdr pane from the current repository directory.
-   - Use the current/default model and `low` reasoning, e.g. `pi --thinking low` unless the local pi CLI requires a different equivalent.
-   - Prompt the sub-agent to load and follow the `implement` skill before making changes.
-   - Also invoke `/implement` with the sub-issue URL so the sub-agent gets the standard implementation prompt.
+   - Call `subagent` with `agent: "implementer"` for the current slice.
    - Include any important dependency/context notes from earlier slices.
    - Tell the sub-agent to implement the issue, run appropriate checks, and commit completed work to the current branch.
 
-Use a sub-agent prompt shaped like this:
+Use a sub-agent task shaped like this:
 
 ```text
-/implement <sub-issue-url>
+Implement sub-issue <sub-issue-url> as part of parent PRD: $1.
 
-Before making any changes, load and follow the `implement` skill.
-
-You are implementing this slice as part of parent PRD: $1
-
-Important orchestration context:
-- This work is being performed serially. Only implement this issue's scope.
-- Preserve existing commits on the branch.
-- Run appropriate tests/typechecks/lints for the touched area.
-- Commit your completed work using a Conventional Commit message.
-- Stop and ask if the issue is ambiguous, blocked, or requires product/design decisions.
+This work is being performed serially. Only implement this issue's scope and preserve existing commits.
+Run appropriate tests, typechecks, and lints for the touched area. Commit the completed work using a Conventional Commit message.
+Stop and ask if the issue is ambiguous, blocked, or requires product/design decisions.
 
 Additional notes from orchestrator:
 <dependency/context notes>
 ```
 
-5. Monitor the sub-agent:
-   - Use herdr pane/status commands to wait for progress and completion.
-   - Periodically inspect output if the agent appears blocked or idle unexpectedly.
-   - If the sub-agent asks for guidance, answer in that pane or take over only as needed to unblock orchestration.
+4. Monitor the sub-agent result:
+   - Wait for the `subagent` call to finish.
+   - If it fails or reports that it is blocked, investigate and provide guidance before continuing.
    - Do not start the next slice until the current sub-agent is done.
 
-6. Verify completion of each slice before moving on:
+5. Verify completion of each slice before moving on:
    - Confirm the sub-agent committed its work.
    - Inspect `git status --short --branch` and recent commits.
    - If the working tree is dirty because the sub-agent failed to commit, either ask it to finish or resolve the issue before continuing.
    - Briefly inspect the diff/commit summary for obvious scope mistakes.
-   - Close the completed sub-agent pane once verified.
+   - Confirm the completed sub-agent has returned its summary before continuing.
 
-7. Continue until all sub-issues are complete.
+6. Continue until all sub-issues are complete.
 
-8. Optional stacked PR creation:
+7. Optional stacked PR creation:
    - Only do this if the user's extra instructions explicitly request stacked PRs after orchestration, e.g. "stack after", "create stacked PRs", "push stack", or "open PRs after".
    - Do not infer this from ordinary implementation requests.
    - If requested, after all slices are complete, committed, and the working tree is clean, run the `/prd-stack $1` workflow with any relevant base-branch/PR instructions from `${@:2}`.
@@ -84,7 +69,7 @@ Additional notes from orchestrator:
    - If stacked PR creation succeeds, include the stack/PR URLs in the final report.
    - If it is blocked, report the blocker and leave commits local.
 
-9. Final report:
+8. Final report:
    - List each sub-issue handled, in order.
    - Include the commit hash/summary for each slice.
    - Mention any checks run or skipped.

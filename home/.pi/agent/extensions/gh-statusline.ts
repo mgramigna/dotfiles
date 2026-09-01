@@ -31,6 +31,7 @@ type CheckState =
 interface PrView {
 	number: number;
 	url: string;
+	state?: "OPEN" | "CLOSED" | "MERGED";
 	headRefOid?: string;
 }
 
@@ -218,7 +219,7 @@ async function refresh(ctx: ExtensionContext): Promise<void> {
 	}
 
 	const theme = ctx.ui.theme;
-	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,url"], gitRoot);
+	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,url,state"], gitRoot);
 
 	if (!pr) {
 		ctx.ui.setStatus(STATUS_KEY, undefined);
@@ -231,9 +232,10 @@ async function refresh(ctx: ExtensionContext): Promise<void> {
 	);
 
 	const prText = osc8(`#${pr.number}`, pr.url);
+	const mergedIcon = pr.state === "MERGED" ? ` ${theme.fg("accent", "")}` : "";
 	const checksText = summarizeChecks(checks, theme);
 
-	ctx.ui.setStatus(STATUS_KEY, `${theme.fg("accent", "PR ")}${prText} ${checksText}`);
+	ctx.ui.setStatus(STATUS_KEY, `${theme.fg("accent", "PR ")}${prText}${mergedIcon} ${checksText}`);
 }
 
 export default function (pi: ExtensionAPI) {

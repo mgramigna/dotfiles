@@ -14,7 +14,7 @@ Guidelines:
 - Run the smallest relevant tests, typechecks, or validation commands after editing.
 - Do not commit, create branches, push changes, or open pull requests.
 - Do not delegate to another agent.
-- Do not run broad reviews such as Overseer unless the task explicitly requests one.
+- Do not run reviews unless the task explicitly requests one.
 - If requirements are ambiguous or a necessary decision is unsafe to guess, stop and clearly explain what the parent agent must decide.
 
 Output:

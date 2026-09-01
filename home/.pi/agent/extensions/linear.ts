@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type, type Static } from "typebox";
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
@@ -116,6 +116,19 @@ const issueFields = `
 	comments(first: 20) { nodes { id body createdAt user { id name email } } }
 `;
 
+const linearAddCommentParameters = Type.Object({
+	issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
+	body: Type.String({ description: "Markdown comment body" }),
+});
+type LinearAddCommentInput = Static<typeof linearAddCommentParameters>;
+
+const COMMENT_PREVIEW_LIMIT = 2_000;
+
+function commentPreview(body: string): string {
+	if (body.length <= COMMENT_PREVIEW_LIMIT) return body;
+	return `${body.slice(0, COMMENT_PREVIEW_LIMIT)}\n\n[… ${body.length - COMMENT_PREVIEW_LIMIT} more characters]`;
+}
+
 async function getIssueByKey(issueKey: string): Promise<LinearIssue> {
 	const { teamKey, number } = parseIssueKey(issueKey);
 	const data = await linearGraphql<{
@@ -182,6 +195,24 @@ async function resolveTeamId(teamKeyOrId: string): Promise<string> {
 }
 
 export default function (pi: ExtensionAPI) {
+	pi.on("tool_call", async (event, ctx) => {
+		if (!isToolCallEventType<"linear_add_comment", LinearAddCommentInput>("linear_add_comment", event)) {
+			return undefined;
+		}
+
+		if (!ctx.hasUI) {
+			return { block: true, reason: "Linear comment blocked (no UI for confirmation)" };
+		}
+
+		const confirmed = await ctx.ui.confirm(
+			`Add comment to ${event.input.issueKey}?`,
+			`This will post the following comment to Linear:\n\n${commentPreview(event.input.body)}\n\nAllow this one time?`,
+		);
+		if (!confirmed) return { block: true, reason: "Linear comment blocked by user" };
+
+		return undefined;
+	});
+
 	pi.registerTool({
 		name: "linear_get_issue",
 		label: "Linear: Get Issue",
@@ -279,11 +310,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "linear_add_comment",
 		label: "Linear: Add Comment",
-		description: "Add a markdown comment to a Linear issue by issue key.",
-		parameters: Type.Object({
-			issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
-			body: Type.String({ description: "Markdown comment body" }),
-		}),
+		description: "Add a markdown comment to a Linear issue by issue key. Requires explicit user confirmation before posting.",
+		parameters: linearAddCommentParameters,
 		async execute(_toolCallId, params) {
 			const issue = await getIssueByKey(params.issueKey);
 			const data = await linearGraphql<{ commentCreate: { success: boolean; comment?: { id: string; url?: string } } }>(
