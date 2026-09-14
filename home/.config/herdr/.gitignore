@@ -1,6 +1,10 @@
 # Herdr runtime/local state
 *
 
-# Keep the shared config in this repo
+# Keep the shared config and local plugins in this repo
 !.gitignore
 !config.toml
+!local-plugins/
+!local-plugins/worktrunk-start/
+!local-plugins/worktrunk-start/herdr-plugin.toml
+!local-plugins/worktrunk-start/setup.py

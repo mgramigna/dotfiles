@@ -91,6 +91,11 @@ backup_target "$HOME/.pi/agent/prompts"
 log_step "Stowing home dotfiles"
 stow --dir "$STOW_DIR" --target "$HOME" --restow "${PACKAGES[@]}"
 
+if command -v herdr >/dev/null 2>&1 && [ -f "$HOME/.config/herdr/local-plugins/worktrunk-start/herdr-plugin.toml" ]; then
+  log_step "Linking local Herdr Worktrunk plugin"
+  herdr plugin link "$HOME/.config/herdr/local-plugins/worktrunk-start" --enabled
+fi
+
 if [ "$(uname -s)" = "Darwin" ]; then
   log_step "Preparing macOS dotfile targets"
   backup_target "$HOME/.config/ghostty"

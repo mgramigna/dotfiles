@@ -1,0 +1,10 @@
+id = "local.worktrunk-start"
+name = "Worktrunk setup"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Run approved Worktrunk pre-start hooks when a project has .config/wt.toml"
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "worktree.created"
+command = ["python3", "setup.py"]

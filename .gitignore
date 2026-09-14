@@ -4,6 +4,10 @@ home/.config/tmux/plugins
 macos/.config/karabiner/automatic_backups
 home/.config/pi-orchestrator-web/env
 
+# Tool local secrets / generated state
+home/.config/opencode/cli.json
+home/.config/opencode/service.json
+
 # Pi local state / secrets
 home/.pi/agent/auth.json
 home/.pi/agent/settings.json
@@ -23,3 +27,4 @@ home/.pi/agent/advisor.json
 **/.pi/advisor.json
 home/.pi/agent/swear-jar.json
 home/.pi/agent/fff
+home/.pi/agent/web-search-cache/
