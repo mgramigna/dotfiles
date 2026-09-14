@@ -49,6 +49,18 @@ backup_target() {
     return 0
   fi
 
+  # Skip anything that resolves inside the repo (e.g. via a parent symlink
+  # like ~/.pi -> $ROOT/home/.pi); moving it would delete repo-tracked files.
+  if [ -e "$target" ]; then
+    local resolved
+    resolved="$(realpath -m -- "$target")"
+    case "$resolved" in
+      "$ROOT"/*)
+        return 0
+        ;;
+    esac
+  fi
+
   if [ -L "$target" ]; then
     local link_target raw_link_target
     link_target=""
