@@ -51,9 +51,9 @@ backup_target() {
 
   # Skip anything that resolves inside the repo (e.g. via a parent symlink
   # like ~/.pi -> $ROOT/home/.pi); moving it would delete repo-tracked files.
-  if [ -e "$target" ]; then
+  if [ -d "$(dirname "$target")" ]; then
     local resolved
-    resolved="$(realpath -m -- "$target")"
+    resolved="$(cd "$(dirname "$target")" && pwd -P)/$(basename "$target")"
     case "$resolved" in
       "$ROOT"/*)
         return 0
