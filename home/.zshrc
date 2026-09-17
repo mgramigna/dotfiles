@@ -55,3 +55,6 @@ export PATH=/home/mg/.opencode/bin:$PATH
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
+
+# Added by the Hunk installer (https://hunk.dev)
+export PATH='/Users/matt/.hunk/bin':"$PATH"
