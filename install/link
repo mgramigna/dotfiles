@@ -99,6 +99,14 @@ backup_target "$HOME/.config/herdr"
 backup_target "$HOME/.local/scripts"
 backup_target "$HOME/.pi/agent/agents"
 backup_target "$HOME/.pi/agent/prompts"
+backup_target "$HOME/.pi/agent/model-prefs.json"
+
+# Pi's skills directory can also contain skills installed outside this repo.
+# Only prepare names managed by the dotfiles package so Stow can merge them.
+for repo_skill in "$ROOT/home/.pi/agent/skills"/*; do
+  [ -e "$repo_skill" ] || continue
+  backup_target "$HOME/.pi/agent/skills/$(basename "$repo_skill")"
+done
 
 log_step "Stowing home dotfiles"
 stow --dir "$STOW_DIR" --target "$HOME" --restow "${PACKAGES[@]}"

@@ -80,6 +80,13 @@ check_link tmux "$HOME/.config/tmux" "$ROOT/home/.config/tmux"
 check_link starship "$HOME/.config/starship" "$ROOT/home/.config/starship"
 check_link scripts "$HOME/.local/scripts" "$ROOT/home/.local/scripts"
 check_link pi-agents "$HOME/.pi/agent/agents" "$ROOT/home/.pi/agent/agents"
+check_link pi-model-prefs "$HOME/.pi/agent/model-prefs.json" "$ROOT/home/.pi/agent/model-prefs.json"
+
+for repo_skill in "$ROOT/home/.pi/agent/skills"/*; do
+  [ -e "$repo_skill" ] || continue
+  skill_name="$(basename "$repo_skill")"
+  check_link "pi-skill-$skill_name" "$HOME/.pi/agent/skills/$skill_name" "$repo_skill"
+done
 
 if [ "$(uname -s)" = "Darwin" ]; then
   check_link ghostty "$HOME/.config/ghostty" "$ROOT/macos/.config/ghostty"
