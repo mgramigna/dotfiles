@@ -120,6 +120,10 @@ split_horizontal = 'prefix+"'
 # directory = "~/.herdr/worktrees"
 
 [ui]
+tab_bar_right = [
+  { type = "command", command = "~/.local/scripts/herdr-status", interval_seconds = 5, timeout_seconds = 2 },
+]
+
 # Sidebar width (auto-scaled based on workspace names, this sets the default)
 # sidebar_width = 26
 
