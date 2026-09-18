@@ -32,9 +32,7 @@ Before writing anything, inspect:
 6. Existing server start/status/stop/log commands and whether a server is already running.
 7. `git status --short` so temporary work cannot be confused with user changes.
 
-Prefer the repository's documented focused-test command. If project-local instructions conflict with this skill, follow the project.
-
-For the survivor-survivor-league conventions, consult [references/survivor-survivor-league.md](references/survivor-survivor-league.md). Treat it as an example, not a default for other repositories.
+Prefer the repository's documented focused-test command. If project-local instructions conflict with this skill, follow the project. Keep repository-specific commands and conventions in that repository's own instructions rather than adding them to this global skill.
 
 ### 2. Plan temporary paths and ownership
 
