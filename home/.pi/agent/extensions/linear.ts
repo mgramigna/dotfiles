@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { StringEnum } from "@earendil-works/pi-ai";
 import { isToolCallEventType, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -10,6 +11,15 @@ const LINEAR_API_URL = "https://api.linear.app/graphql";
 interface LinearResponse<T> {
 	data?: T;
 	errors?: Array<{ message: string }>;
+}
+
+type LinearIssueRelationType = "blocks" | "duplicate" | "related" | "similar";
+
+interface LinearIssueRelation {
+	id: string;
+	type: LinearIssueRelationType;
+	issue: { id: string; identifier: string; title: string; url: string };
+	relatedIssue: { id: string; identifier: string; title: string; url: string };
 }
 
 interface LinearIssue {
@@ -34,6 +44,8 @@ interface LinearIssue {
 			state?: { id: string; name: string; type?: string | null } | null;
 		}>;
 	} | null;
+	relations?: { nodes?: LinearIssueRelation[] } | null;
+	inverseRelations?: { nodes?: LinearIssueRelation[] } | null;
 	comments?: {
 		nodes?: Array<{
 			id: string;
@@ -97,6 +109,13 @@ function parseIssueKey(issueKey: string): { teamKey: string; number: number } {
 	return { teamKey: match[1]!, number: Number(match[2]) };
 }
 
+const issueRelationFields = `
+	id
+	type
+	issue { id identifier title url }
+	relatedIssue { id identifier title url }
+`;
+
 const issueFields = `
 	id
 	identifier
@@ -113,8 +132,14 @@ const issueFields = `
 	labels { nodes { id name } }
 	parent { id identifier title url }
 	children(first: 20) { nodes { id identifier title url state { id name type } } }
+	relations(first: 50) { nodes { id type issue { id identifier title url } relatedIssue { id identifier title url } } }
+	inverseRelations(first: 50) { nodes { id type issue { id identifier title url } relatedIssue { id identifier title url } } }
 	comments(first: 20) { nodes { id body createdAt user { id name email } } }
 `;
+
+const issueRelationTypeSchema = StringEnum(["blocks", "duplicate", "related", "similar"] as const, {
+	description: "Relation type. For blocks, issueKey blocks relatedIssueKey.",
+});
 
 const linearAddCommentParameters = Type.Object({
 	issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
@@ -147,12 +172,25 @@ async function getIssueByKey(issueKey: string): Promise<LinearIssue> {
 	return issue;
 }
 
+function formatIssueRelation(relation: LinearIssueRelation): string {
+	return `${relation.issue.identifier} --${relation.type}--> ${relation.relatedIssue.identifier} (relation id: ${relation.id})`;
+}
+
 function formatIssue(issue: LinearIssue): string {
 	const labels = issue.labels?.nodes?.map((label) => label.name).join(", ") || "none";
 	const parent = issue.parent ? `${issue.parent.identifier}: ${issue.parent.title} (${issue.parent.url})` : "none";
 	const children = issue.children?.nodes?.length
 		? issue.children.nodes
 				.map((child) => `- ${child.identifier}: ${child.title} [${child.state?.name || "unknown"}] (${child.url})`)
+				.join("\n")
+		: "none";
+	const relations = [...(issue.relations?.nodes ?? []), ...(issue.inverseRelations?.nodes ?? [])];
+	const formattedRelations = relations.length
+		? relations
+				.map(
+					(relation) =>
+						`- ${relation.issue.identifier} --${relation.type}--> ${relation.relatedIssue.identifier} (relation id: ${relation.id})`,
+				)
 				.join("\n")
 		: "none";
 	const comments = issue.comments?.nodes?.length
@@ -172,6 +210,8 @@ function formatIssue(issue: LinearIssue): string {
 		`Parent: ${parent}`,
 		"Sub-issues:",
 		children,
+		"Relations:",
+		formattedRelations,
 		`Created: ${issue.createdAt}`,
 		`Updated: ${issue.updatedAt}`,
 		"",
@@ -304,6 +344,90 @@ export default function (pi: ExtensionAPI) {
 			);
 			if (!data.issueUpdate.success || !data.issueUpdate.issue) throw new Error("Linear issueUpdate failed");
 			return { content: [{ type: "text", text: formatIssue(data.issueUpdate.issue) }], details: data.issueUpdate.issue };
+		},
+	});
+
+	pi.registerTool({
+		name: "linear_create_issue_relation",
+		label: "Linear: Create Issue Relation",
+		description:
+			"Create a relation between two Linear issues. For type blocks, issueKey blocks relatedIssueKey; reverse the keys to express blocked by.",
+		parameters: Type.Object({
+			issueKey: Type.String({ description: "Source Linear issue key, e.g. DEV-123" }),
+			relatedIssueKey: Type.String({ description: "Target Linear issue key, e.g. DEV-456" }),
+			type: issueRelationTypeSchema,
+		}),
+		async execute(_toolCallId, params) {
+			parseIssueKey(params.issueKey);
+			parseIssueKey(params.relatedIssueKey);
+			const data = await linearGraphql<{
+				issueRelationCreate: { success: boolean; issueRelation?: LinearIssueRelation };
+			}>(
+				`mutation($input: IssueRelationCreateInput!) {
+					issueRelationCreate(input: $input) { success issueRelation { ${issueRelationFields} } }
+				}`,
+				{
+					input: {
+						issueId: params.issueKey.trim().toUpperCase(),
+						relatedIssueId: params.relatedIssueKey.trim().toUpperCase(),
+						type: params.type,
+					},
+				},
+			);
+			if (!data.issueRelationCreate.success || !data.issueRelationCreate.issueRelation) {
+				throw new Error("Linear issueRelationCreate failed");
+			}
+			return {
+				content: [{ type: "text", text: `Created ${formatIssueRelation(data.issueRelationCreate.issueRelation)}` }],
+				details: data.issueRelationCreate.issueRelation,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "linear_update_issue_relation",
+		label: "Linear: Update Issue Relation",
+		description: "Change the type of an existing Linear issue relation by relation id.",
+		parameters: Type.Object({
+			relationId: Type.String({ description: "Relation id returned when creating the relation or by linear_get_issue" }),
+			type: issueRelationTypeSchema,
+		}),
+		async execute(_toolCallId, params) {
+			const data = await linearGraphql<{
+				issueRelationUpdate: { success: boolean; issueRelation?: LinearIssueRelation };
+			}>(
+				`mutation($id: String!, $input: IssueRelationUpdateInput!) {
+					issueRelationUpdate(id: $id, input: $input) { success issueRelation { ${issueRelationFields} } }
+				}`,
+				{ id: params.relationId, input: { type: params.type } },
+			);
+			if (!data.issueRelationUpdate.success || !data.issueRelationUpdate.issueRelation) {
+				throw new Error("Linear issueRelationUpdate failed");
+			}
+			return {
+				content: [{ type: "text", text: `Updated ${formatIssueRelation(data.issueRelationUpdate.issueRelation)}` }],
+				details: data.issueRelationUpdate.issueRelation,
+			};
+		},
+	});
+
+	pi.registerTool({
+		name: "linear_delete_issue_relation",
+		label: "Linear: Delete Issue Relation",
+		description: "Delete a Linear issue relation by relation id. Use linear_get_issue to find relation ids.",
+		parameters: Type.Object({
+			relationId: Type.String({ description: "Relation id returned when creating the relation or by linear_get_issue" }),
+		}),
+		async execute(_toolCallId, params) {
+			const data = await linearGraphql<{ issueRelationDelete: { success: boolean } }>(
+				`mutation($id: String!) { issueRelationDelete(id: $id) { success } }`,
+				{ id: params.relationId },
+			);
+			if (!data.issueRelationDelete.success) throw new Error("Linear issueRelationDelete failed");
+			return {
+				content: [{ type: "text", text: `Deleted Linear issue relation ${params.relationId}` }],
+				details: { relationId: params.relationId, success: true },
+			};
 		},
 	});
 
