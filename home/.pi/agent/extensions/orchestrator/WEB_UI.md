@@ -13,28 +13,6 @@ npx tsx /home/mg/.pi/agent/extensions/orchestrator/web-server.ts
 
 Open `http://host:8787`.
 
-## Run with systemd user service
-
-The dotfiles include:
-
-- `~/.config/systemd/user/pi-orchestrator-web.service`
-- `~/.config/pi-orchestrator-web/env`
-
-Edit the env file first, especially `ORCHESTRATOR_REPO` and `ORCHESTRATOR_HOST`. The included `PATH` mirrors the important entries from `~/.zshrc` plus `~/.cargo/bin`, so systemd can find `bun`, `gh`, `wt`, `pi`, `npx`, etc.
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now pi-orchestrator-web.service
-systemctl --user status pi-orchestrator-web.service
-journalctl --user -u pi-orchestrator-web.service -f
-```
-
-To let the service keep running after logout:
-
-```sh
-sudo loginctl enable-linger "$USER"
-```
-
 ## Behavior
 
 - Only one orchestration run is allowed at a time.

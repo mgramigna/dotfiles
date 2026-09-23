@@ -2,7 +2,6 @@ backups/*-backup-*
 home/.zshrc.local
 home/.config/tmux/plugins
 macos/.config/karabiner/automatic_backups
-home/.config/pi-orchestrator-web/env
 
 # Tool local secrets / generated state
 home/.config/opencode/cli.json
