@@ -22,6 +22,15 @@ interface LinearIssueRelation {
 	relatedIssue: { id: string; identifier: string; title: string; url: string };
 }
 
+interface LinearWorkflowState {
+	id: string;
+	name: string;
+	type: string;
+	position: number;
+	color?: string | null;
+	description?: string | null;
+}
+
 interface LinearIssue {
 	id: string;
 	identifier: string;
@@ -147,6 +156,23 @@ const linearAddCommentParameters = Type.Object({
 });
 type LinearAddCommentInput = Static<typeof linearAddCommentParameters>;
 
+const linearUpdateIssueStatusParameters = Type.Object({
+	issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
+	stateId: Type.String({ description: "Workflow state id returned by linear_list_issue_statuses" }),
+});
+type LinearUpdateIssueStatusInput = Static<typeof linearUpdateIssueStatusParameters>;
+
+const linearUpdateIssueParameters = Type.Object({
+	issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
+	title: Type.Optional(Type.String()),
+	description: Type.Optional(Type.String({ description: "Markdown issue description" })),
+	priority: Type.Optional(Type.Number()),
+	assigneeId: Type.Optional(Type.String()),
+	stateId: Type.Optional(Type.String({ description: "Prefer linear_update_issue_status for status changes" })),
+	parentIssueKey: Type.Optional(Type.String({ description: "Parent Linear issue key to make this issue a sub-issue, e.g. DEV-123" })),
+});
+type LinearUpdateIssueInput = Static<typeof linearUpdateIssueParameters>;
+
 const COMMENT_PREVIEW_LIMIT = 2_000;
 
 function commentPreview(body: string): string {
@@ -234,22 +260,98 @@ async function resolveTeamId(teamKeyOrId: string): Promise<string> {
 	return team.id;
 }
 
+async function getTeamWorkflowStates(teamId: string): Promise<LinearWorkflowState[]> {
+	const states: LinearWorkflowState[] = [];
+	let after: string | null = null;
+
+	do {
+		const data: {
+			team?: {
+				states: {
+					nodes?: LinearWorkflowState[];
+					pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+				};
+		} | null;
+		} = await linearGraphql(
+			`query($teamId: String!, $after: String) {
+				team(id: $teamId) {
+					states(first: 50, after: $after) {
+						nodes { id name type position color description }
+						pageInfo { hasNextPage endCursor }
+					}
+				}
+			}`,
+			{ teamId, after },
+		);
+		if (!data.team) throw new Error(`Linear team ${teamId} not found`);
+		states.push(...(data.team.states.nodes ?? []));
+		after = data.team.states.pageInfo.hasNextPage ? (data.team.states.pageInfo.endCursor ?? null) : null;
+	} while (after);
+
+	return states.sort((left, right) => left.position - right.position);
+}
+
+async function getIssueStatusChange(issueKey: string, stateId: string) {
+	const issue = await getIssueByKey(issueKey);
+	if (!issue.team?.id) throw new Error(`Linear issue ${issue.identifier} has no team`);
+	const states = await getTeamWorkflowStates(issue.team.id);
+	const nextState = states.find((state) => state.id === stateId);
+	if (!nextState) {
+		throw new Error(`Workflow state ${stateId} is not valid for ${issue.team.name || issue.team.key}`);
+	}
+	return { issue, nextState };
+}
+
+function formatWorkflowStates(issue: LinearIssue, states: LinearWorkflowState[]): string {
+	const currentStateId = issue.state?.id;
+	return [
+		`Statuses for ${issue.identifier} (${issue.team?.name || issue.team?.key || "unknown team"})`,
+		`Current: ${issue.state?.name || "unknown"}${currentStateId ? ` (${currentStateId})` : ""}`,
+		"",
+		...states.map(
+			(state) =>
+				`- ${state.name} [${state.type}]${state.id === currentStateId ? " (current)" : ""}\n  ID: ${state.id}${state.description ? `\n  ${state.description}` : ""}`,
+		),
+	].join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
-		if (!isToolCallEventType<"linear_add_comment", LinearAddCommentInput>("linear_add_comment", event)) {
+		if (isToolCallEventType<"linear_add_comment", LinearAddCommentInput>("linear_add_comment", event)) {
+			if (!ctx.hasUI) {
+				return { block: true, reason: "Linear comment blocked (no UI for confirmation)" };
+			}
+
+			const confirmed = await ctx.ui.confirm(
+				`Add comment to ${event.input.issueKey}?`,
+				`This will post the following comment to Linear:\n\n${commentPreview(event.input.body)}\n\nAllow this one time?`,
+			);
+			if (!confirmed) return { block: true, reason: "Linear comment blocked by user" };
 			return undefined;
 		}
 
+		let statusChange: LinearUpdateIssueStatusInput | undefined;
+		if (isToolCallEventType<"linear_update_issue_status", LinearUpdateIssueStatusInput>("linear_update_issue_status", event)) {
+			statusChange = event.input;
+		} else if (
+			isToolCallEventType<"linear_update_issue", LinearUpdateIssueInput>("linear_update_issue", event) &&
+			event.input.stateId !== undefined
+		) {
+			statusChange = { issueKey: event.input.issueKey, stateId: event.input.stateId };
+		}
+		if (!statusChange) return undefined;
+
 		if (!ctx.hasUI) {
-			return { block: true, reason: "Linear comment blocked (no UI for confirmation)" };
+			return { block: true, reason: "Linear status update blocked (no UI for confirmation)" };
 		}
 
+		const { issue, nextState } = await getIssueStatusChange(statusChange.issueKey, statusChange.stateId);
+		if (issue.state?.id === nextState.id) return undefined;
 		const confirmed = await ctx.ui.confirm(
-			`Add comment to ${event.input.issueKey}?`,
-			`This will post the following comment to Linear:\n\n${commentPreview(event.input.body)}\n\nAllow this one time?`,
+			`Update ${issue.identifier} status?`,
+			`${issue.state?.name || "unknown"} → ${nextState.name}\n\nAllow this one time?`,
 		);
-		if (!confirmed) return { block: true, reason: "Linear comment blocked by user" };
-
+		if (!confirmed) return { block: true, reason: "Linear status update blocked by user" };
 		return undefined;
 	});
 
@@ -319,23 +421,54 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		name: "linear_list_issue_statuses",
+		label: "Linear: List Issue Statuses",
+		description: "List the valid workflow statuses for a Linear issue's team, including the ids required for status updates.",
+		parameters: Type.Object({ issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }) }),
+		async execute(_toolCallId, params) {
+			const issue = await getIssueByKey(params.issueKey);
+			if (!issue.team?.id) throw new Error(`Linear issue ${issue.identifier} has no team`);
+			const states = await getTeamWorkflowStates(issue.team.id);
+			return { content: [{ type: "text", text: formatWorkflowStates(issue, states) }], details: { issue, states } };
+		},
+	});
+
+	pi.registerTool({
+		name: "linear_update_issue_status",
+		label: "Linear: Update Issue Status",
+		description: "Update a Linear issue's status using a state id from linear_list_issue_statuses. Requires explicit user confirmation.",
+		parameters: linearUpdateIssueStatusParameters,
+		async execute(_toolCallId, params) {
+			const { issue, nextState } = await getIssueStatusChange(params.issueKey, params.stateId);
+			if (issue.state?.id === nextState.id) {
+				return {
+					content: [{ type: "text", text: `${issue.identifier} is already ${nextState.name}` }],
+					details: issue,
+				};
+			}
+			const data = await linearGraphql<{ issueUpdate: { success: boolean; issue?: LinearIssue } }>(
+				`mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { ${issueFields} } } }`,
+				{ id: issue.id, input: { stateId: nextState.id } },
+			);
+			if (!data.issueUpdate.success || !data.issueUpdate.issue) throw new Error("Linear issueUpdate failed");
+			return { content: [{ type: "text", text: formatIssue(data.issueUpdate.issue) }], details: data.issueUpdate.issue };
+		},
+	});
+
+	pi.registerTool({
 		name: "linear_update_issue",
 		label: "Linear: Update Issue",
-		description: "Update a Linear issue title, description, priority, assigneeId, stateId, or parentIssueKey by issue key.",
-		parameters: Type.Object({
-			issueKey: Type.String({ description: "Linear issue key, e.g. DEV-123" }),
-			title: Type.Optional(Type.String()),
-			description: Type.Optional(Type.String({ description: "Markdown issue description" })),
-			priority: Type.Optional(Type.Number()),
-			assigneeId: Type.Optional(Type.String()),
-			stateId: Type.Optional(Type.String()),
-			parentIssueKey: Type.Optional(Type.String({ description: "Parent Linear issue key to make this issue a sub-issue, e.g. DEV-123" })),
-		}),
+		description: "Update a Linear issue title, description, priority, assigneeId, stateId, or parentIssueKey by issue key. Prefer linear_update_issue_status for status changes.",
+		parameters: linearUpdateIssueParameters,
 		async execute(_toolCallId, params) {
 			const issue = await getIssueByKey(params.issueKey);
 			const input: Record<string, unknown> = {};
-			for (const key of ["title", "description", "priority", "assigneeId", "stateId"] as const) {
+			for (const key of ["title", "description", "priority", "assigneeId"] as const) {
 				if (params[key] !== undefined) input[key] = params[key];
+			}
+			if (params.stateId !== undefined) {
+				const { nextState } = await getIssueStatusChange(params.issueKey, params.stateId);
+				input.stateId = nextState.id;
 			}
 			if (params.parentIssueKey !== undefined) input.parentId = params.parentIssueKey;
 			const data = await linearGraphql<{ issueUpdate: { success: boolean; issue?: LinearIssue } }>(
