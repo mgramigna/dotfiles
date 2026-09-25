@@ -50,6 +50,9 @@ interface ReviewNode {
 interface PrReviewCommentsData {
 	repository?: {
 		pullRequest?: {
+			comments?: {
+				nodes?: ReviewNode[];
+			};
 			reviewThreads?: {
 				nodes?: ReviewThreadNode[];
 			};
@@ -156,6 +159,14 @@ async function getPrComments(cwd: string, prNumber: number): Promise<PrComment[]
 		query($owner: String!, $repo: String!, $number: Int!) {
 			repository(owner: $owner, name: $repo) {
 				pullRequest(number: $number) {
+					comments(first: 100) {
+						nodes {
+							author { login }
+							body
+							url
+							createdAt
+						}
+					}
 					reviewThreads(first: 100) {
 						nodes {
 							isResolved
@@ -218,6 +229,13 @@ async function getPrComments(cwd: string, prNumber: number): Promise<PrComment[]
 			resolved: thread.isResolved,
 		}));
 	});
+	const conversationComments = (pullRequest?.comments?.nodes ?? []).map((comment, commentIndex) => ({
+		id: `conversation:${commentIndex}:${comment.url ?? comment.createdAt ?? comment.body ?? ""}`,
+		author: comment.author?.login ?? "unknown",
+		body: comment.body ?? "",
+		url: comment.url,
+		createdAt: comment.createdAt,
+	}));
 	const reviewComments = (pullRequest?.reviews?.nodes ?? [])
 		.filter((review) => review.body?.trim())
 		.map((review, reviewIndex) => ({
@@ -228,7 +246,7 @@ async function getPrComments(cwd: string, prNumber: number): Promise<PrComment[]
 			createdAt: review.createdAt,
 		}));
 
-	return [...reviewComments, ...inlineComments];
+	return [...conversationComments, ...reviewComments, ...inlineComments];
 }
 
 async function choosePrompt(ctx: ExtensionCommandContext): Promise<string | null> {
@@ -366,7 +384,7 @@ async function chooseComments(ctx: ExtensionCommandContext, comments: PrComment[
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("pr-comments", {
-		description: "Select GitHub PR review comments and ask pi to address them",
+		description: "Select GitHub PR comments and ask pi to address them",
 		handler: async (_args, ctx) => {
 			const gitRoot = await getGitRoot(ctx.cwd);
 			if (!gitRoot) {
@@ -382,7 +400,7 @@ export default function (pi: ExtensionAPI) {
 
 			const comments = await getPrComments(gitRoot, pr.number);
 			if (comments.length === 0) {
-				ctx.ui.notify(`No review comments found on PR #${pr.number}`, "info");
+				ctx.ui.notify(`No comments found on PR #${pr.number}`, "info");
 				return;
 			}
 

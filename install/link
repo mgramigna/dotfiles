@@ -100,6 +100,7 @@ backup_target "$HOME/.local/scripts"
 backup_target "$HOME/.pi/agent/agents"
 backup_target "$HOME/.pi/agent/prompts"
 backup_target "$HOME/.pi/agent/model-prefs.json"
+backup_target "$HOME/.plannotator/config.json"
 
 # Pi's skills directory can also contain skills installed outside this repo.
 # Only prepare names managed by the dotfiles package so Stow can merge them.

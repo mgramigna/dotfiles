@@ -1,0 +1,19 @@
+{
+  "diffOptions": {
+    "hideWhitespace": true,
+    "diffStyle": "split"
+  },
+  "reviewAnalysis": {
+    "semanticDiff": true,
+    "callFlow": false
+  },
+  "prompts": {
+    "review": {
+      "runtimes": {
+        "pi": {
+          "denied": "\n\nTreat these annotations as the user's pull request review of the current changes. Address only the submitted comments; do not independently review the rest of the diff. Read the relevant code and interpret each comment by its stated intent. For a change request, make the requested code changes now, then run relevant checks. For a question, investigate and answer it without changing code solely to answer it. If a comment mixes a question and a change request, do both. If a request is ambiguous, unsafe, or conflicts with another request, explain the blocker and ask for clarification rather than guessing. When finished, report what changed, which checks ran and their results, and answers to the questions. Do not merely give verdicts or stop after proposing changes."
+        }
+      }
+    }
+  }
+}

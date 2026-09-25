@@ -14,6 +14,15 @@ function isEnvPath(path: unknown): path is string {
 	return basename(path.replace(/[/\\]+$/, "")) === ENV_BASENAME;
 }
 
+function isEnvExistenceCheck(command: string): boolean {
+	// Only allow a whole, literal shell command. A chained command or shell
+	// expansion may read the file, even if it starts with `test -f .env`.
+	const path = String.raw`(?:\.\/|\.\.\/)*\.env`;
+	const literalPath = String.raw`(?:${path}|'${path}'|"${path}")`;
+	const check = String.raw`-(?:e|f)[ \t]+${literalPath}`;
+	return new RegExp(String.raw`^[ \t]*(?:test[ \t]+${check}|\[[ \t]+${check}[ \t]+\]|\[\[[ \t]+${check}[ \t]+\]\])[ \t]*$`).test(command);
+}
+
 function commandMayReadEnv(command: string): boolean {
 	// Match common shell references to a file whose basename is exactly `.env`.
 	// This intentionally errs on the side of asking for confirmation for commands
@@ -62,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (event.toolName === "bash") {
 			const command = typeof event.input.command === "string" ? event.input.command : "";
-			if (commandMayReadEnv(command)) {
+			if (commandMayReadEnv(command) && !isEnvExistenceCheck(command)) {
 				return confirmEnvRead(
 					{
 						description: "bash command",
