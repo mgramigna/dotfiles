@@ -14,20 +14,52 @@ function isEnvPath(path: unknown): path is string {
 	return basename(path.replace(/[/\\]+$/, "")) === ENV_BASENAME;
 }
 
-function isEnvExistenceCheck(command: string): boolean {
-	// Only allow a whole, literal shell command. A chained command or shell
-	// expansion may read the file, even if it starts with `test -f .env`.
-	const path = String.raw`(?:\.\/|\.\.\/)*\.env`;
-	const literalPath = String.raw`(?:${path}|'${path}'|"${path}")`;
-	const check = String.raw`-(?:e|f)[ \t]+${literalPath}`;
-	return new RegExp(String.raw`^[ \t]*(?:test[ \t]+${check}|\[[ \t]+${check}[ \t]+\]|\[\[[ \t]+${check}[ \t]+\]\])[ \t]*$`).test(command);
+const envPath = String.raw`(?:\.\/|\.\.\/)*\.env`;
+const literalEnvPath = String.raw`(?:${envPath}|'${envPath}'|"${envPath}")`;
+const existenceCheck = String.raw`-(?:e|f)[ \t]+${literalEnvPath}`;
+const envExistenceCommand = new RegExp(String.raw`^[ \t]*(?:test[ \t]+${existenceCheck}|\[[ \t]+${existenceCheck}[ \t]+\]|\[\[[ \t]+${existenceCheck}[ \t]+\]\])[ \t]*$`);
+
+function onlyChecksEnvExistence(command: string): boolean {
+	// Recognize only simple commands joined by &&, ||, ;, or newlines.
+	// Anything harder to parse falls back to confirmation, not an exemption.
+	const segments: string[] = [];
+	let start = 0;
+	let quote = "";
+	for (let i = 0; i < command.length; i++) {
+		const char = command[i];
+		if (quote) {
+			if ("$`\\".includes(char)) return false;
+			if (char === quote) quote = "";
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			quote = char;
+			continue;
+		}
+		// Expansions, redirects, subshells, escapes, and comments need a shell parser.
+		if ("$`\\<>(){}#".includes(char)) return false;
+		if (char === ";" || char === "\n" || char === "&" || char === "|") {
+			if (char === "&" || char === "|") {
+				if (command[i + 1] !== char) return false;
+				i++;
+			}
+			segments.push(command.slice(start, char === "&" || char === "|" ? i - 1 : i));
+			start = i + 1;
+		}
+	}
+	if (quote) return false;
+	segments.push(command.slice(start));
+	return segments.every((segment) => !commandMayReadEnv(segment) || envExistenceCommand.test(segment));
 }
 
 function commandMayReadEnv(command: string): boolean {
 	// Match common shell references to a file whose basename is exactly `.env`.
 	// This intentionally errs on the side of asking for confirmation for commands
 	// such as `cat .env`, `grep FOO ../.env`, `source ./.env`, or `cp .env /tmp/x`.
-	return /(^|[\s'"`=;|&()<>])(?:\.\/|\.\.\/|~\/|\/)?(?:[^\s'"`=;|&()<>]+\/)*\.env(?=$|[\s'"`;|&()<>])/i.test(command);
+	// Shell quote concatenation and backslash escaping can spell `.env` without
+	// that exact substring appearing in the command (e.g. cat .e'n'v).
+	const unquoted = command.replace(/[\\'"]/g, "");
+	return /(^|[\s'"`=;|&()<>])(?:\.\/|\.\.\/|~\/|\/)?(?:[^\s'"`=;|&()<>]+\/)*\.env(?=$|[\s'"`;|&()<>])/i.test(unquoted);
 }
 
 async function confirmEnvRead(operation: GuardedOperation, ctx: { hasUI: boolean; ui: { select: (message: string, choices: string[]) => Promise<string | undefined> } }) {
@@ -71,7 +103,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (event.toolName === "bash") {
 			const command = typeof event.input.command === "string" ? event.input.command : "";
-			if (commandMayReadEnv(command) && !isEnvExistenceCheck(command)) {
+			if (commandMayReadEnv(command) && !onlyChecksEnvExistence(command)) {
 				return confirmEnvRead(
 					{
 						description: "bash command",
