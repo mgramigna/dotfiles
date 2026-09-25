@@ -20,7 +20,7 @@ const existenceCheck = String.raw`-(?:e|f)[ \t]+${literalEnvPath}`;
 const envExistenceCommand = new RegExp(String.raw`^[ \t]*(?:test[ \t]+${existenceCheck}|\[[ \t]+${existenceCheck}[ \t]+\]|\[\[[ \t]+${existenceCheck}[ \t]+\]\])[ \t]*$`);
 
 function onlyChecksEnvExistence(command: string): boolean {
-	// Recognize only simple commands joined by &&, ||, ;, or newlines.
+	// Recognize simple commands joined by &&, ||, ;, pipes, or newlines.
 	// Anything harder to parse falls back to confirmation, not an exemption.
 	const segments: string[] = [];
 	let start = 0;
@@ -36,14 +36,16 @@ function onlyChecksEnvExistence(command: string): boolean {
 			quote = char;
 			continue;
 		}
-		// Expansions, redirects, subshells, escapes, and comments need a shell parser.
-		if ("$`\\<>(){}#".includes(char)) return false;
+		// Expansions, subshells, escapes, and comments need a shell parser.
+		if ("$`\\(){}#".includes(char)) return false;
+		// Redirections in unrelated commands are fine. A redirection on the
+		// .env check itself fails the exact-match test below.
+		if (char === "&" && (command[i - 1] === ">" || command[i - 1] === "<")) continue;
 		if (char === ";" || char === "\n" || char === "&" || char === "|") {
-			if (char === "&" || char === "|") {
-				if (command[i + 1] !== char) return false;
-				i++;
-			}
-			segments.push(command.slice(start, char === "&" || char === "|" ? i - 1 : i));
+			const paired = (char === "&" || char === "|") && command[i + 1] === char;
+			if (char === "&" && !paired) return false;
+			segments.push(command.slice(start, i));
+			if (paired) i++;
 			start = i + 1;
 		}
 	}
