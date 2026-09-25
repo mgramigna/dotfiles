@@ -58,7 +58,7 @@ Choose a unique spec path under the discovered Playwright test directory, for ex
 - Otherwise use the repository's documented status/readiness and start commands.
 - Reuse a healthy existing server; do not claim ownership of it.
 - Decide whether a manual start is needed here, but perform that start in the trapped shell in step 5 so interruption also runs cleanup.
-- After starting one, wait using the project's readiness/preflight mechanism. On failure, inspect bounded logs rather than following them indefinitely.
+- If the focused test command already runs readiness/preflight, do not invoke it separately; run the test command and inspect its output on failure. Otherwise wait using the project's documented readiness mechanism. Inspect bounded logs rather than following them indefinitely.
 
 Do not improvise a second server command when the project already provides lifecycle scripts.
 
@@ -126,7 +126,8 @@ trap 'cleanup 143' TERM HUP
 # Omit this block when reusing a server or Playwright webServer.
 <documented-start-command>
 server_started=1
-<documented-readiness-or-preflight-command>
+# Only if the focused test command does not already perform readiness checks:
+<documented-readiness-command>
 
 PI_SCREENSHOT_PATH="$shot_path" PI_SCREENSHOT_TOKEN="$capture_token" \
   <focused-playwright-command> "$spec_path"
