@@ -244,7 +244,7 @@ function previewLines(text: string, maxLines = 20): string[] {
 
 function setAdvisorStatus(ctx: ExtensionContext, text: string | undefined): void {
 	ctx.ui.setStatus(
-		"advisor",
+		"01-advisor",
 		text ? `${ctx.ui.theme.fg("accent", "●")} ${ctx.ui.theme.fg("dim", text)}` : undefined,
 	);
 }

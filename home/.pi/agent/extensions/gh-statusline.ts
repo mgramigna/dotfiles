@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const execFileAsync = promisify(execFile);
-const STATUS_KEY = "gh-pr";
+const STATUS_KEY = "02-gh-pr";
 const REFRESH_INTERVAL_MS = 60_000;
 
 type CheckState =

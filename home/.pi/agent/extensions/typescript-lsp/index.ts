@@ -131,7 +131,7 @@ export default function (pi: ExtensionAPI) {
 
 	function updateStatus(ctx: ExtensionContext) {
 		if (disabled) {
-			ctx.ui.setStatus?.("typescript-lsp", ctx.ui.theme.fg("dim", "ts-lsp: disabled"));
+			ctx.ui.setStatus?.("05-typescript-lsp", ctx.ui.theme.fg("dim", "ts-lsp: disabled"));
 			return;
 		}
 		const errorCount = [...diagnosticState.values()].reduce((total, state) => {
@@ -142,7 +142,7 @@ export default function (pi: ExtensionAPI) {
 		const degraded = lastHealth.startsWith("degraded") || lastHealth.startsWith("unavailable");
 		const dotColor = degraded ? "error" : errorCount > 0 ? "warning" : "success";
 		const text = degraded ? "ts-lsp: degraded" : errorCount > 0 ? `ts-lsp: ${errorCount} err` : "ts-lsp: ok";
-		ctx.ui.setStatus?.("typescript-lsp", `${theme.fg(dotColor, "●")} ${theme.fg("dim", text)}`);
+		ctx.ui.setStatus?.("05-typescript-lsp", `${theme.fg(dotColor, "●")} ${theme.fg("dim", text)}`);
 	}
 
 	pi.on("session_start", (_event, ctx) => {

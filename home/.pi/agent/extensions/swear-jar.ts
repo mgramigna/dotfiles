@@ -6,7 +6,7 @@ import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type E
 import type { AutocompleteItem, SelectItem } from "@earendil-works/pi-tui";
 import { autocompleteSelect } from "../shared/autocomplete-select";
 
-const STATUS_KEY = "swear-jar";
+const STATUS_KEY = "04-swear-jar";
 const AGENT_DIR = join(homedir(), ".pi", "agent");
 const STATE_PATH = join(AGENT_DIR, "swear-jar.json");
 const PATTERNS_PATH = join(AGENT_DIR, "swear-jar-patterns.txt");

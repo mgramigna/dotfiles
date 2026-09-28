@@ -1232,7 +1232,7 @@ function createProgress(ui: CommandContext["ui"], runId: string) {
         ? `orchestrator ${runId} #${progress.iteration} ${progress.phase}`
         : `orchestrator ${runId} ${progress.phase}`;
 
-      ui.setStatus?.("orchestrator", `${color("accent", "●")} ${color("dim", status)}`);
+      ui.setStatus?.("03-orchestrator", `${color("accent", "●")} ${color("dim", status)}`);
 
       const field = (label: string, value: string, valueColor = "text") =>
         `${color("muted", `${label}:`)} ${color(valueColor, value)}`;
@@ -1248,7 +1248,7 @@ function createProgress(ui: CommandContext["ui"], runId: string) {
       ui.setWidget?.("orchestrator-progress", lines, { placement: "aboveEditor" });
     },
     clear: () => {
-      ui.setStatus?.("orchestrator", undefined);
+      ui.setStatus?.("03-orchestrator", undefined);
       ui.setWidget?.("orchestrator-progress", undefined);
     },
   };
