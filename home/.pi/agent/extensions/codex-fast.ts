@@ -14,12 +14,16 @@ function readEnabled(): boolean {
   }
 }
 
+function supportsFastMode(ctx: ExtensionContext): boolean {
+  return ctx.model?.provider === "openai" || ctx.model?.provider === "openai-codex";
+}
+
 export default function (pi: ExtensionAPI) {
   let enabled = readEnabled();
 
   function updateStatus(ctx: ExtensionContext) {
     if (ctx.mode !== "tui") return;
-    const status = enabled && ctx.model?.provider === "openai-codex"
+    const status = enabled && supportsFastMode(ctx)
       ? `${ctx.ui.theme.fg("warning", "⚡")} ${ctx.ui.theme.fg("dim", "fast")}`
       : undefined;
     ctx.ui.setStatus(statusKey, status);
@@ -63,7 +67,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_provider_request", (event, ctx) => {
-    if (!enabled || ctx.model?.provider !== "openai-codex") return;
+    if (!enabled || !supportsFastMode(ctx)) return;
     if (typeof event.payload !== "object" || event.payload === null || Array.isArray(event.payload)) return;
 
     return { ...event.payload, service_tier: "priority" };
