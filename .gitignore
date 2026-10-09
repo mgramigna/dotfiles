@@ -27,3 +27,5 @@ home/.pi/agent/advisor.json
 home/.pi/agent/swear-jar.json
 home/.pi/agent/fff
 home/.pi/agent/web-search-cache/
+home/.pi/agent/install/
+home/.pi/agent/codex-fast.json

@@ -83,39 +83,33 @@ async function confirmEnvRead(operation: GuardedOperation, ctx: { hasUI: boolean
 
 export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
+		let operation: GuardedOperation | undefined;
 		if (event.toolName === "read" && isEnvPath(event.input.path)) {
-			return confirmEnvRead(
-				{
-					description: "read tool path",
-					detail: String(event.input.path),
-				},
-				ctx,
-			);
-		}
-
-		if (event.toolName === "ffgrep" && isEnvPath(event.input.path)) {
-			return confirmEnvRead(
-				{
-					description: "ffgrep path",
-					detail: String(event.input.path),
-				},
-				ctx,
-			);
-		}
-
-		if (event.toolName === "bash") {
+			operation = { description: "read tool path", detail: event.input.path };
+		} else if (event.toolName === "ffgrep" && isEnvPath(event.input.path)) {
+			operation = { description: "ffgrep path", detail: event.input.path };
+		} else if (event.toolName === "bash") {
 			const command = typeof event.input.command === "string" ? event.input.command : "";
 			if (commandMayReadEnv(command) && !onlyChecksEnvExistence(command)) {
-				return confirmEnvRead(
-					{
-						description: "bash command",
-						detail: command,
-					},
-					ctx,
-				);
+				operation = { description: "bash command", detail: command };
 			}
 		}
 
-		return undefined;
+		if (!operation) return undefined;
+
+		try {
+			// Linked worktrees have their own Git directory but share a common one.
+			// Absolute paths also make this comparison work from subdirectories.
+			const result = await pi.exec("git", ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], {
+				cwd: ctx.cwd,
+				timeout: 5000,
+			});
+			const [gitDir, commonDir] = result.stdout.trim().split(/\r?\n/);
+			if (result.code === 0 && gitDir && commonDir && gitDir !== commonDir) return undefined;
+		} catch {
+			// If Git is unavailable, keep requiring confirmation.
+		}
+
+		return confirmEnvRead(operation, ctx);
 	});
 }
