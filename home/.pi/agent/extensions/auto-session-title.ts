@@ -67,17 +67,59 @@ async function generateTitle(prompt: string, ctx: ExtensionContext): Promise<str
 	return cleanTitle(text);
 }
 
+export async function renameHerdrTab(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	title: string,
+	isCurrent: () => boolean,
+): Promise<void> {
+	const tabId = process.env.HERDR_TAB_ID;
+	// Headless child agents inherit Herdr's environment but must not rename their parent's tab.
+	if (ctx.mode !== "tui" || process.env.HERDR_ENV !== "1" || !tabId || !isCurrent()) return;
+
+	try {
+		await pi.exec("herdr", ["tab", "rename", tabId, title], { timeout: 2_000 });
+	} catch {
+		// Missing Herdr, stale tab IDs, and API failures must not interrupt Pi.
+	}
+}
+
+export async function renameHerdrWorktree(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	title: string,
+	isCurrent: () => boolean,
+): Promise<void> {
+	const workspaceId = process.env.HERDR_WORKSPACE_ID;
+	// Headless child agents inherit Herdr's environment but must not rename their parent's workspace.
+	if (ctx.mode !== "tui" || process.env.HERDR_ENV !== "1" || !workspaceId || !isCurrent()) return;
+
+	try {
+		const result = await pi.exec("herdr", ["workspace", "get", workspaceId], { timeout: 2_000 });
+		if (result.code !== 0 || !isCurrent()) return;
+		const workspace = JSON.parse(result.stdout)?.result?.workspace;
+		// Use checkout provenance, not the branch name: a primary checkout can be on any branch.
+		if (workspace?.workspace_id !== workspaceId || workspace?.worktree?.is_linked_worktree !== true) return;
+		await pi.exec("herdr", ["workspace", "rename", workspaceId, title], { timeout: 2_000 });
+	} catch {
+		// Missing Herdr, stale workspace IDs, and API failures must not interrupt Pi.
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	let attemptedForSession: string | undefined;
 	let alive = true;
+	let sessionGeneration = 0;
 
 	pi.on("session_start", (_event, _ctx) => {
 		alive = true;
+		sessionGeneration += 1;
 		attemptedForSession = undefined;
 	});
 
 	pi.on("session_shutdown", () => {
 		alive = false;
+		sessionGeneration += 1;
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {
@@ -90,11 +132,15 @@ export default function (pi: ExtensionAPI) {
 		const prompt = event.prompt.trim();
 		if (!prompt) return;
 
+		const generation = sessionGeneration;
+		const isCurrent = () => alive && generation === sessionGeneration;
 		void (async () => {
 			try {
 				const title = await generateTitle(prompt, ctx);
-				if (!alive || !title || pi.getSessionName()) return;
+				if (!isCurrent() || !title || pi.getSessionName()) return;
 				pi.setSessionName(title);
+				await renameHerdrTab(pi, ctx, title, isCurrent);
+				await renameHerdrWorktree(pi, ctx, title, isCurrent);
 			} catch {
 				// Fail safe: never interrupt the turn and never rename on errors.
 			}

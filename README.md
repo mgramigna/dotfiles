@@ -98,6 +98,12 @@ The default Ubuntu setup links:
 - `~/.pi/agent`
 - `~/.local/scripts`
 
+### Pi council review
+
+Run `/council` for a user-requested, multi-model correctness and security review. Members investigate independently, challenge each other's findings, and report only unanimously accepted issues. Models cannot invoke a council review themselves.
+
+See [Council review](docs/council.md) for commands, model configuration and review limits.
+
 ### Pi sequence diagrams
 
 Pi renders supported Mermaid `sequenceDiagram` blocks as compact ASCII diagrams in the terminal, without adding a Mermaid/browser dependency. Ask Pi to diagram a flow naturally, or use:

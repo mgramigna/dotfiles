@@ -1,0 +1,16 @@
+{
+  "members": [
+    {
+      "name": "codex",
+      "model": "openai-codex/gpt-6.1-sol",
+      "thinking": "high"
+    },
+    {
+      "name": "opus",
+      "model": "anthropic/claude-opus-5-5",
+      "thinking": "high"
+    }
+  ],
+  "maxDebateRounds": 3,
+  "timeoutMinutes": 20
+}
