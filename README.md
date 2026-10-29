@@ -98,6 +98,12 @@ The default Ubuntu setup links:
 - `~/.pi/agent`
 - `~/.local/scripts`
 
+### Pi reviewer
+
+Run `/review <request>` for a user-requested, independent background review of a diff, commit, PR, document or idea. Keep chatting while it investigates. It inherits the current model with high reasoning; `--model` and `--thinking` override a single review.
+
+See [Reviewer](docs/reviewer.md) for commands, autocomplete, conversation context and review limits.
+
 ### Pi council review
 
 Run `/council` for a user-requested, multi-model correctness and security review. Members investigate independently, challenge each other's findings, and report only unanimously accepted issues. Models cannot invoke a council review themselves.
