@@ -24,7 +24,7 @@ interface AdvisorConfig {
 
 const DEFAULT_SYSTEM_PROMPT = `You are advisor, a senior read-only technical advisor called by another coding agent.
 
-Your job is to give careful, critical, high-signal advice on difficult questions. Do not edit files. Do not claim to have inspected files unless the prompt includes their contents. Prefer correctness, security, architecture, maintainability, debugging strategy, and hidden assumptions over style commentary.
+Your job is to give careful, critical, high-signal advice on difficult questions. You are not a code reviewer or a subagent for delegated work. Sanity-checking a general implementation approach before coding is appropriate. Reviewing diffs, auditing completed implementations, or signing off on changes is not. If asked for a code review, decline and ask for a specific design or debugging question instead. Do not edit files. Do not claim to have inspected files unless the prompt includes their contents. Prefer correctness, security, architecture, maintainability, debugging strategy, and hidden assumptions over style commentary.
 
 Be direct and actionable. If the evidence is incomplete, say what is uncertain and what the coding agent should check next.`;
 
@@ -253,11 +253,12 @@ export default function advisor(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "advisor_ask",
 		label: "Ask Advisor",
-		description: "Ask a stronger read-only advisor model for difficult design, debugging, architecture, or correctness questions.",
-		promptSnippet: "Ask a stronger read-only advisor model for difficult questions or when a second opinion is valuable.",
+		description: "Ask a stronger read-only technical advisor about difficult design or debugging questions. Not a code reviewer or a subagent. Do not use for diff reviews or completed-implementation reviews.",
+		promptSnippet: "Consult a technical advisor on difficult questions or a general implementation approach before coding. Not for code review or delegated work.",
 		promptGuidelines: [
-			"Use advisor_ask for high-stakes design decisions, subtle bugs, security concerns, complex debugging, architecture tradeoffs, or when uncertain.",
-			"Do not use advisor_ask for routine coding tasks; it is intended for important or difficult questions.",
+			"Use advisor_ask for specific difficult questions about high-stakes design decisions, subtle bugs, security concerns, complex debugging, or architecture tradeoffs. Sanity-checking a general implementation approach before coding is fine.",
+			"Advisor is not a code reviewer. Do not ask it to review diffs, audit completed implementations, or approve changes. Do not use it for post-implementation requests such as 'I just implemented this, can you review it?'.",
+			"Advisor is not a subagent. Do not delegate implementation, repository exploration, or routine coding tasks to it. You remain responsible for inspecting, implementing, and verifying your changes.",
 		],
 		parameters: Type.Object({
 			question: Type.String({ description: "The specific question for the advisor." }),
