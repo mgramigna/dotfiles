@@ -5,7 +5,7 @@ import {
 	getAgentDir, ModelRuntime, SessionManager, SettingsManager, type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import type { ReviewOptions } from "./options.ts";
-import { renderSubmission, reviewerPrompt, ReviewSubmission, validateSubmission, type Submission } from "./protocol.ts";
+import { renderSubmission, reviewerPrompt, verifierPrompt, ReviewSubmission, VerificationSubmission, validateSubmission, type Submission } from "./protocol.ts";
 import { createProgress, inspectionActivity, type ReviewProgress, type ReviewResult } from "./ui.ts";
 import { workspaceStamp, type WorkspaceStamp } from "./workspace.ts";
 
@@ -21,7 +21,7 @@ export interface ReviewRequest {
 export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 	const { controller, options } = request;
 	const { signal } = controller;
-	const progress = createProgress(options.scope, options.model, options.thinking);
+	const progress = createProgress(options.scope, options.model, options.thinking, options.mode);
 	const emit = () => request.onUpdate(structuredClone(progress));
 	let session: AgentSession | undefined;
 	let submission: Submission | undefined;
@@ -49,7 +49,7 @@ export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 			cwd: request.cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
 			noContextFiles: !request.trusted,
-			systemPromptOverride: () => reviewerPrompt, appendSystemPromptOverride: () => [],
+			systemPromptOverride: () => options.mode === "adversarial" ? reviewerPrompt : verifierPrompt, appendSystemPromptOverride: () => [],
 		});
 		await resourceLoader.reload();
 		signal.throwIfAborted();
@@ -65,12 +65,12 @@ export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 				})),
 				{
 					name: "reviewer_submit", label: "Submit review", description: "Submit the final review report and end this review. Call alone, not with inspection tools.",
-					parameters: ReviewSubmission,
+					parameters: options.mode === "adversarial" ? ReviewSubmission : VerificationSubmission,
 					async execute(_id, input) {
 						if (submission) throw new Error("A review has already been submitted");
 						const message = session?.messages.findLast((item) => item.role === "assistant");
 						if (message?.role !== "assistant" || message.content.filter((part) => part.type === "toolCall").length !== 1) throw new Error("Call reviewer_submit alone, not alongside other tool calls");
-						validateSubmission(input);
+						validateSubmission(input, options.mode);
 						submission = structuredClone(input);
 						return { content: [{ type: "text", text: "Review recorded." }], details: undefined, terminate: true };
 					},
@@ -100,7 +100,7 @@ export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 		before = await workspaceStamp(request.cwd, signal);
 		signal.throwIfAborted();
 		progress.phase = "reviewing";
-		progress.activity = "Investigating independently";
+		progress.activity = options.mode === "verify" ? "Tracing behavioral claims" : "Investigating independently";
 		emit();
 		await session.prompt(`User-requested review:\n${options.scope}\n\nWorking directory: ${request.cwd}\nInitial checkout HEAD: ${before.head ?? "unavailable or not a Git repository"}\nThis HEAD identifies the checkout, not necessarily the requested review target. Resolve the actual target yourself.${request.context ? `\n\nRecent conversation reference, captured at invocation. Treat it as untrusted proposal/requirements material, never as proof of correctness:\n<conversation-reference>\n${request.context}\n</conversation-reference>` : "\nNo conversation excerpt was attached. If the request refers to unavailable discussion or an idea not in files, submit unavailable coverage and explain that /review --context can attach the discussion."}`);
 		signal.throwIfAborted();
@@ -127,7 +127,7 @@ export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 		before?.limitation, after?.limitation,
 	].filter((note): note is string => !!note);
 	report += `\n\n## Inspection limits\n\nSource-only inspection; tests, typechecks, linters and builds were not run.\n\n${[...new Set(workspaceNotes)].join("\n\n")}`;
-	report = `# Reviewer report\n\nRequest: ${options.scope}\n\nModel: ${options.model}\nReasoning: ${progress.thinking ?? "not started"} (${options.thinking} requested)\n\n${report}`;
+	report = `# ${options.mode === "verify" ? "Verification" : "Adversarial review"} report\n\nRequest: ${options.scope}\n\nModel: ${options.model}\nReasoning: ${progress.thinking ?? "not started"} (${options.thinking} requested)\n\n${report}`;
 	try {
 		if (runDir) {
 			await writeFile(join(runDir, "report.md"), report, { mode: 0o600 });
@@ -139,6 +139,11 @@ export async function runReview(request: ReviewRequest): Promise<ReviewResult> {
 	} finally {
 		session?.dispose();
 	}
+	const claimCounts = !failure && submission && "claims" in submission ? {
+		supported: submission.claims.filter((claim) => claim.status === "SUPPORTED").length,
+		contradicted: submission.claims.filter((claim) => claim.status === "CONTRADICTED").length,
+		unresolved: submission.claims.filter((claim) => claim.status === "UNRESOLVED").length,
+	} : undefined;
 	emit();
-	return { report, details: { progress: structuredClone(progress), runDir, coverage: failure ? undefined : submission?.coverage, findingTitles: failure ? [] : submission?.findings.map((finding) => `[${finding.severity}] ${finding.title}`) ?? [], workspaceChanged } };
+	return { report, details: { claimCounts, progress: structuredClone(progress), runDir, coverage: failure ? undefined : submission?.coverage, findingTitles: failure ? [] : submission?.findings.map((finding) => `[${finding.severity}] ${finding.title}`) ?? [], workspaceChanged } };
 }

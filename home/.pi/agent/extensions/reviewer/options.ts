@@ -2,10 +2,12 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 export const thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-export const defaultScope = "Review the current uncommitted changes, including staged, unstaged and untracked files.";
+export type ReviewMode = "verify" | "adversarial";
+export const defaultScope = "Inspect the current uncommitted changes, including staged, unstaged and untracked files.";
 const controls = ["status", "hide", "cancel", "help"] as const;
 
 export interface ReviewOptions {
+	mode: ReviewMode;
 	scope: string;
 	model?: string;
 	thinking: ThinkingLevel;
@@ -14,9 +16,9 @@ export interface ReviewOptions {
 }
 
 // Only leading options are parsed. The request itself is left verbatim, including quotes and flags.
-export function parseOptions(input: string): ReviewOptions {
+export function parseOptions(input: string, mode: ReviewMode = "verify"): ReviewOptions {
 	let rest = input.trim();
-	const result: ReviewOptions = { scope: defaultScope, thinking: "high", context: false };
+	const result: ReviewOptions = { mode, scope: defaultScope, thinking: "high", context: false };
 	if (controls.includes(rest as typeof controls[number])) return { ...result, control: rest as typeof controls[number] };
 	const seen = new Set<string>();
 	while (rest.startsWith("--")) {
@@ -98,12 +100,17 @@ export function completeOptions(prefix: string, models: readonly string[]): Auto
 	return matches.length ? matches : null;
 }
 
-export const help = `User-only background reviewer. Keep chatting while it runs.
+export const help = `User-only background verification. Keep chatting while it runs.
 
 /review [--model provider/model-id] [--thinking level] [--context] [--] <request>
+/review-adversarial [same options] <request>
+/review-kitchen-sink [same options] <request>
 /review status | hide | cancel | help
 
-Default: current uncommitted changes, current model, high reasoning.
+/review verifies behavioral claims with source evidence; /review-adversarial uses the original adversarial reviewer for that invocation only.
+/review-kitchen-sink runs both modes independently in parallel with the same request, model, reasoning and optional context, producing two reports.
+All commands share one running task and the same status/hide/cancel/help controls. Cancel stops both kitchen-sink reviews.
+Default: verification, current uncommitted changes, current model, high reasoning.
 Options apply only to this review and must precede the request.
 --context includes up to 24,000 characters of recent user/assistant text, useful for "the proposal above". No tool output, thinking or images is copied.
 Use -- before a request that is itself "status", "hide", "cancel" or "help".

@@ -1,6 +1,6 @@
 # Pi reviewer
 
-`/review` runs one independent reviewer in the background. It accepts a free-form request, so it can review diffs, commits, branches, PRs, files, designs and ideas. The general subagent extension stays disabled.
+`/review` runs an independent verifier in the background. It checks intended behavior against source evidence rather than searching for a quota of bugs. `/review-adversarial` runs the original adversarial reviewer for a single invocation. `/review-kitchen-sink` runs both modes independently in parallel and produces two reports. All three accept free-form requests covering diffs, commits, branches, PRs, files, designs and ideas. The general subagent extension stays disabled; `agents/reviewer.md` is separate and unchanged.
 
 ## Commands
 
@@ -12,13 +12,19 @@
 /review branch feature/scheduling against main
 /review --context the caching proposal we discussed
 /review --model openai-codex/gpt-6.1-sol --thinking xhigh current diff
+/review-adversarial current diff
+/review-adversarial --context challenge the caching proposal
+/review-kitchen-sink current diff
+/review-kitchen-sink --context the caching proposal we discussed
 /review status
 /review hide
 /review cancel
 /review help
 ```
 
-With no request, it reviews staged, unstaged and untracked changes. The default model is the current session's model at invocation time, with `high` reasoning. Overrides apply only to that review, not the main session. An unavailable or unauthenticated model fails rather than silently falling back. Models that do not support the requested reasoning level use their supported level; the panel and report show the effective level.
+With no request, it inspects staged, unstaged and untracked changes. `/review` always defaults to verification; using `/review-adversarial` does not change later invocations. All commands accept the same options and `status`, `hide`, `cancel` and `help` controls. They share one active task and its latest results. Kitchen-sink reviews use the same request, model, reasoning and invocation-time context, but separate isolated sessions, deadlines and artifacts. Neither sees the other's report. Cancelling stops both; one review failing does not stop the other.
+
+The default model is the current session's model at invocation time, with `high` reasoning. Overrides apply only to that review, not the main session. An unavailable or unauthenticated model fails rather than silently falling back. Models that do not support the requested reasoning level use their supported level; the panel and report show the effective level.
 
 Options must precede the request:
 
@@ -35,7 +41,7 @@ Options must precede the request:
 
 ## Background UI
 
-The live panel shows the target, model, reasoning, recent inspection tools, current activity, elapsed time, turns, token usage and cost. Keep chatting while it runs. `hide` hides the panel without cancelling; `status` restores it. Only one reviewer can run at a time.
+The live panel shows the mode, target, model, reasoning, recent inspection tools, current activity, elapsed time, turns, token usage and cost. Keep chatting while it runs. `hide` hides the panel without cancelling; `status` restores it. Only one command invocation can run at a time. Kitchen-sink invocations show a progress panel for each reviewer and deliver each report as it finishes, waiting for the main agent to settle if needed.
 
 The finished report is a collapsible conversation entry. Press `Ctrl+O` to expand it. If the main agent is still responding, the panel shows that the saved report is waiting. The extension appends it when the main agent settles. It never steers an ongoing response, requests another model turn or automatically applies fixes.
 
@@ -45,7 +51,13 @@ TUI and RPC commands return immediately. Print and JSON modes wait for the repor
 
 ## Review behavior and limits
 
-The reviewer investigates independently, challenges assumptions and tries to disprove findings before reporting them. Findings include severity, confidence, location, evidence, attempted falsification, failure mode and a suggested fix. Code findings use file locations; design findings can cite sections or quoted claims.
+Verification identifies material behavioral claims from requirements, acceptance criteria, existing contracts and callers, then traces the relevant implementation. Each claim cites its requirement source and concrete evidence, and is marked `SUPPORTED`, `CONTRADICTED` or `UNRESOLVED`. Inferred requirements must be labeled as assumptions. Reading tests establishes what they assert, not that they pass.
+
+Reports lead with these claims, followed by demonstrated defects and material inspection limitations. A defect needs a reachable situation, actual implementation behavior, a violated requirement or contract, and a meaningful consequence. Verification does not accept `HUNCH` or `QUESTION` findings. Missing evidence stays on the relevant unresolved claim. No defects is a successful outcome. Inspection stops once material claims are accounted for, without expanding the search merely to produce findings.
+
+Complete coverage means the requested scope was inspected, not that every claim was supported. The collapsed report shows counts of supported, contradicted and unresolved claims. The assessment does not imply approval when claims are unresolved, contradicted or defects were found. Source support is not an execution result or proof of universal correctness.
+
+`/review-adversarial` preserves the original approach: challenge assumptions, construct failure scenarios and try to disprove findings before reporting them. Its findings retain severity and `VERIFIED`, `HUNCH` or `QUESTION` confidence labels. Both modes include location, evidence, counterevidence checked, failure mode and a suggested fix for defects. Code locations use file references; design locations can cite sections or quoted claims.
 
 Unavailable or partial scopes are marked incomplete, not clean. A model that stops without submitting a report also produces an incomplete review. Reviews have a 20-minute deadline, and individual bash inspection commands have a 30-second limit.
 
@@ -73,4 +85,4 @@ npm run typecheck
 node --test tests/reviewer.test.mjs
 ```
 
-Tests exercise option parsing, autocomplete, terminal widths, real SDK tool inspection and submission through a local model endpoint, isolated model selection, background continuation, cancellation, session changes and delayed result delivery.
+Tests exercise default verification, one-off adversarial fallback, parallel kitchen-sink reviews, mode-specific submission schemas, evidence requirements, unresolved-claim reporting, shared controls, option parsing, autocomplete, terminal widths, real SDK tool inspection and submission through a local model endpoint, isolated model selection, background continuation, cancellation, session changes and delayed result delivery.

@@ -1,8 +1,10 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, stripTerminalSequences, truncateToWidth } from "@earendil-works/pi-tui";
+import type { ReviewMode } from "./options.ts";
 
 export interface ReviewProgress {
+	mode: ReviewMode;
 	scope: string;
 	model: string;
 	requestedThinking: ThinkingLevel;
@@ -22,12 +24,13 @@ export interface ReviewResultDetails {
 	runDir?: string;
 	coverage?: "complete" | "partial" | "unavailable";
 	findingTitles: string[];
+	claimCounts?: { supported: number; contradicted: number; unresolved: number };
 	workspaceChanged?: boolean;
 }
 export interface ReviewResult { report: string; details: ReviewResultDetails }
 
-export function createProgress(scope: string, model: string, thinking: ThinkingLevel): ReviewProgress {
-	return { scope, model, requestedThinking: thinking, phase: "starting", startedAt: Date.now(), activity: "Preparing isolated reviewer", recent: [], tools: 0, turns: 0, tokens: 0, cost: 0 };
+export function createProgress(scope: string, model: string, thinking: ThinkingLevel, mode: ReviewMode = "verify"): ReviewProgress {
+	return { mode, scope, model, requestedThinking: thinking, phase: "starting", startedAt: Date.now(), activity: mode === "verify" ? "Preparing isolated verifier" : "Preparing isolated reviewer", recent: [], tools: 0, turns: 0, tokens: 0, cost: 0 };
 }
 export function singleLine(value: string): string {
 	return stripTerminalSequences(value).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
@@ -59,7 +62,7 @@ export function renderProgress(progress: ReviewProgress, theme: Theme, width: nu
 	const phase = { starting: "Starting", reviewing: "Investigating", cancelling: "Cancelling", complete: "Complete", incomplete: "Incomplete" }[progress.phase];
 	const tokens = progress.tokens >= 1000 ? `${(progress.tokens / 1000).toFixed(1)}k` : String(progress.tokens);
 	const lines = [
-		theme.fg("accent", `╭─ Reviewer · ${phase} · ${duration(progress, now)}`),
+		theme.fg("accent", `╭─ ${progress.mode === "verify" ? "Verifier" : "Adversarial reviewer"} · ${phase} · ${duration(progress, now)}`),
 		`${theme.fg("accent", "│")} ${theme.fg("muted", singleLine(progress.scope))}`,
 		`${theme.fg("accent", "│")} ${singleLine(progress.model)} · ${reasoning(progress)}`,
 		`${theme.fg("accent", "│")} ${progress.tools} tools · ${progress.turns} turns · ${tokens} tokens${progress.cost > 0 ? ` · $${progress.cost.toFixed(3)}` : ""}`,
@@ -77,11 +80,17 @@ export function resultComponent(report: string, details: ReviewResultDetails | u
 		render(width: number): string[] {
 			if (expanded) return markdown.render(width);
 			const incomplete = details?.progress.phase !== "complete";
-			const lines = [theme.fg(incomplete ? "warning" : "success", theme.bold(`Review ${incomplete ? "incomplete" : "complete"}`))];
+			const needsAttention = incomplete || !!details?.findingTitles.length || !!details?.claimCounts?.contradicted || !!details?.claimCounts?.unresolved;
+			const label = details?.progress.mode === "verify" ? "Verification" : "Review";
+			const lines = [theme.fg(needsAttention ? "warning" : "success", theme.bold(`${label} ${incomplete ? "incomplete" : "complete"}`))];
 			if (details) {
 				lines.push(singleLine(`${details.progress.model} · ${reasoning(details.progress)} · ${duration(details.progress, Date.now())}`));
 				lines.push(singleLine(details.progress.scope));
 				if (details.coverage) lines.push(`Coverage: ${details.coverage} · ${details.findingTitles.length} finding(s)`);
+				if (details.claimCounts) {
+					const { supported, contradicted, unresolved } = details.claimCounts;
+					lines.push(`Claims: ${supported} supported · ${contradicted} contradicted · ${unresolved} unresolved`);
+				}
 				lines.push(...details.findingTitles.slice(0, 3).map(singleLine));
 				if (details.findingTitles.length > 3) lines.push(`... ${details.findingTitles.length - 3} more finding(s)`);
 				if (details.workspaceChanged) lines.push(theme.fg("warning", "Workspace changes detected during review"));
