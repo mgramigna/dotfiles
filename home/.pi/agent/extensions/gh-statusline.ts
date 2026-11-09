@@ -2,303 +2,129 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { hyperlink } from "@earendil-works/pi-tui";
 
-const execFileAsync = promisify(execFile);
-const STATUS_KEY = "02-gh-pr";
-const REFRESH_INTERVAL_MS = 60_000;
+const exec = promisify(execFile);
+const STATUS_KEY = "03-github-prs";
+const REFRESH_INTERVAL_MS = 30_000;
 
-type CheckState =
-	| "PASS"
-	| "FAIL"
-	| "PENDING"
-	| "SKIP"
-	| "CANCEL"
-	| "SUCCESS"
-	| "FAILURE"
-	| "CANCELLED"
-	| "TIMED_OUT"
-	| "ACTION_REQUIRED"
-	| "NEUTRAL"
-	| "SKIPPED"
-	| "STARTUP_FAILURE"
-	| "STALE"
-	| "QUEUED"
-	| "IN_PROGRESS"
-	| "WAITING"
-	| "REQUESTED"
-	| "";
+interface Check {
+	__typename: "CheckRun" | "StatusContext";
+	status?: string;
+	conclusion?: string | null;
+	state?: string;
+	workflowName?: string;
+	detailsUrl?: string;
+}
 
-interface PrView {
+export interface PullRequest {
 	number: number;
 	url: string;
-	state?: "OPEN" | "CLOSED" | "MERGED";
-	headRefOid?: string;
+	statusCheckRollup: Check[] | null;
 }
 
-interface PrCheck {
-	name?: string;
-	state?: CheckState;
+type Color = "success" | "error" | "warning" | "dim";
+
+/** Rollups include obsolete workflow runs, even cancelled, unexpanded matrix jobs. */
+function currentWorkflowChecks(checks: Check[]): Check[] {
+	const latest = new Map<string, bigint>();
+	const runs = checks.map(check => {
+		if (check.__typename !== "CheckRun" || !check.workflowName) return undefined;
+		const match = check.detailsUrl?.match(/^https:\/\/([^/]+\/[^/]+\/[^/]+)\/actions\/runs\/(\d+)(?:\/|$)/);
+		if (!match) return undefined;
+		const key = `${match[1]}\n${check.workflowName}`;
+		const id = BigInt(match[2]!);
+		// Run IDs order newly created Actions runs. This is not attempt ordering:
+		// rerunning an older run retains its ID. Same-run attempts remain untouched.
+		if (!latest.has(key) || id > latest.get(key)!) latest.set(key, id);
+		return { key, id };
+	});
+	return checks.filter((_check, index) => {
+		const run = runs[index];
+		return !run || latest.get(run.key) === run.id;
+	});
 }
 
-interface WorkflowRun {
-	databaseId: number;
-	name?: string;
-	workflowName?: string;
-	displayTitle?: string;
-	status?: string;
-	conclusion?: string;
-	url?: string;
+export function checkSummary(checks: Check[] | null): { text: string; color: Color }[] {
+	if (!checks?.length) return [{ text: "no checks", color: "dim" }];
+	const counts = { passed: 0, failed: 0, pending: 0, skipped: 0, unknown: 0 };
+	for (const check of currentWorkflowChecks(checks)) {
+		const state = check.__typename === "StatusContext" ? check.state
+			: check.status === "COMPLETED" ? check.conclusion : check.status;
+		if (state === "SUCCESS") counts.passed++;
+		else if (["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"].includes(state ?? "")) counts.failed++;
+		else if (["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"].includes(state ?? "")) counts.pending++;
+		else if (state === "SKIPPED" || state === "NEUTRAL") counts.skipped++;
+		else counts.unknown++;
+	}
+	const parts: { text: string; color: Color }[] = [];
+	if (counts.passed) parts.push({ text: `✓ ${counts.passed}`, color: "success" });
+	if (counts.failed) parts.push({ text: `✗ ${counts.failed}`, color: "error" });
+	if (counts.pending) parts.push({ text: `⏳ ${counts.pending}`, color: "warning" });
+	if (counts.skipped) parts.push({ text: `skip ${counts.skipped}`, color: "dim" });
+	if (counts.unknown) parts.push({ text: `? ${counts.unknown}`, color: "warning" });
+	return parts;
 }
 
-async function exec(args: string[], cwd: string): Promise<string | null> {
-	try {
-		const { stdout } = await execFileAsync(args[0]!, args.slice(1), {
-			cwd,
-			maxBuffer: 1024 * 1024,
-			timeout: 15_000,
-		});
-		return stdout.trim();
-	} catch {
-		return null;
-	}
-}
-
-async function getGitRoot(cwd: string): Promise<string | null> {
-	return exec(["git", "rev-parse", "--show-toplevel"], cwd);
-}
-
-async function ghJson<T>(args: string[], cwd: string): Promise<T | null> {
-	const stdout = await exec(["gh", ...args], cwd);
-	if (!stdout) return null;
-
-	try {
-		return JSON.parse(stdout) as T;
-	} catch {
-		return null;
-	}
-}
-
-function osc8(text: string, url: string): string {
-	return `\u001b]8;;${url}\u001b\\${text}\u001b]8;;\u001b\\`;
-}
-
-function formatRun(run: WorkflowRun): string {
-	const title = run.workflowName || run.name || run.displayTitle || `run ${run.databaseId}`;
-	const suffix = run.conclusion ? ` (${run.conclusion})` : "";
-	return `${title}${suffix}`;
-}
-
-function isFailedRun(run: WorkflowRun): boolean {
-	return ["failure", "cancelled", "timed_out", "action_required"].includes(run.conclusion ?? "");
-}
-
-function summarizeChecks(checks: PrCheck[] | null, theme: any): string {
-	if (!checks) return theme.fg("warning", "checks ?");
-
-	const total = checks.length;
-
-	if (total === 0) return theme.fg("dim", "checks none");
-
-	const passedStates = new Set<CheckState>(["PASS", "SKIP", "SUCCESS", "NEUTRAL", "SKIPPED"]);
-	const failedStates = new Set<CheckState>([
-		"FAIL",
-		"CANCEL",
-		"FAILURE",
-		"CANCELLED",
-		"TIMED_OUT",
-		"ACTION_REQUIRED",
-		"STARTUP_FAILURE",
-		"STALE",
-	]);
-
-	const passed = checks.filter((check) => passedStates.has(check.state ?? "")).length;
-	const failed = checks.filter((check) => failedStates.has(check.state ?? "")).length;
-	const pending = Math.max(0, total - passed - failed);
-
-	const parts = [theme.fg("success", `${passed}/${total} ✓`)];
-	if (failed > 0) parts.push(theme.fg("error", `${failed} ✗`));
-	if (pending > 0) parts.push(theme.fg("warning", `${pending} …`));
-	return parts.join(" ");
-}
-
-async function openCurrentPr(ctx: ExtensionContext): Promise<void> {
-	const gitRoot = await getGitRoot(ctx.cwd);
-	if (!gitRoot) {
-		ctx.ui.notify("Not in a git repository", "warning");
-		return;
-	}
-
-	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,url"], gitRoot);
-	if (!pr?.url) {
-		ctx.ui.notify("No current GitHub PR found", "warning");
-		return;
-	}
-
-	const result = await exec(["open", pr.url], gitRoot);
-	if (result === null) {
-		ctx.ui.notify(`Failed to open PR #${pr.number}`, "error");
-		return;
-	}
-
-	ctx.ui.notify(`Opened PR #${pr.number}`, "success" as any);
-}
-
-async function rerunFailedChecks(ctx: ExtensionContext): Promise<void> {
-	const gitRoot = await getGitRoot(ctx.cwd);
-	if (!gitRoot) {
-		ctx.ui.notify("Not in a git repository", "warning");
-		return;
-	}
-
-	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,headRefOid"], gitRoot);
-	if (!pr?.headRefOid) {
-		ctx.ui.notify("No current GitHub PR found", "warning");
-		return;
-	}
-
-	const runs = await ghJson<WorkflowRun[]>(
-		[
-			"run",
-			"list",
-			"--commit",
-			pr.headRefOid,
-			"--json",
-			"databaseId,name,workflowName,displayTitle,status,conclusion,url",
-		],
-		gitRoot,
-	);
-	const failedRuns = (runs ?? []).filter(isFailedRun);
-
-	if (failedRuns.length === 0) {
-		ctx.ui.notify("No failed GitHub Actions runs found for this PR", "success" as any);
-		return;
-	}
-
-	const choices = [
-		`Re-run failed jobs in all ${failedRuns.length} failed runs`,
-		...failedRuns.map((run) => `Re-run failed jobs: ${formatRun(run)}`),
-		"Cancel",
-	];
-	const choice = await ctx.ui.select("GitHub Actions rerun", choices);
-	if (!choice || choice === "Cancel") return;
-
-	const selectedRuns = choice === choices[0]
-		? failedRuns
-		: [failedRuns[choices.indexOf(choice) - 1]!];
-
-	let rerunCount = 0;
-	const failures: string[] = [];
-	for (const run of selectedRuns) {
-		const result = await exec(["gh", "run", "rerun", String(run.databaseId), "--failed"], gitRoot);
-		if (result === null) {
-			failures.push(formatRun(run));
-		} else {
-			rerunCount += 1;
-		}
-	}
-
-	if (failures.length > 0) {
-		ctx.ui.notify(
-			`Re-ran ${rerunCount}; failed to rerun: ${failures.join(", ")}`,
-			"warning",
-		);
-		return;
-	}
-
-	ctx.ui.notify(
-		`Triggered rerun of failed jobs in ${rerunCount} GitHub Actions run${rerunCount === 1 ? "" : "s"}`,
-		"success" as any,
-	);
-}
-
-async function refresh(ctx: ExtensionContext): Promise<void> {
-	const gitRoot = await getGitRoot(ctx.cwd);
-	if (!gitRoot) {
-		ctx.ui.setStatus(STATUS_KEY, undefined);
-		return;
-	}
-
-	const theme = ctx.ui.theme;
-	const pr = await ghJson<PrView>(["pr", "view", "--json", "number,url,state"], gitRoot);
-
-	if (!pr) {
-		ctx.ui.setStatus(STATUS_KEY, undefined);
-		return;
-	}
-
-	const checks = await ghJson<PrCheck[]>(
-		["pr", "checks", String(pr.number), "--json", "name,state"],
-		gitRoot,
-	);
-
-	const prText = osc8(`#${pr.number}`, pr.url);
-	const mergedIcon = pr.state === "MERGED" ? ` ${theme.fg("accent", "")}` : "";
-	const checksText = summarizeChecks(checks, theme);
-
-	ctx.ui.setStatus(STATUS_KEY, `${theme.fg("accent", "PR ")}${prText}${mergedIcon} ${checksText}`);
+export function renderPrs(prs: PullRequest[], fg: (color: Color | "accent", text: string) => string): string {
+	const count = `${prs.length}${prs.length === 1000 ? "+" : ""}`;
+	return [fg("dim", `${count} open PR${prs.length === 1 ? "" : "s"}`), ...prs.map(pr => {
+		const number = hyperlink(fg("accent", `#${pr.number}`), pr.url);
+		const checks = checkSummary(pr.statusCheckRollup).map(part => fg(part.color, part.text)).join(" · ");
+		return `${number} (${hyperlink(checks, `${pr.url}/checks`)})`;
+	})].join(" · ");
 }
 
 export default function (pi: ExtensionAPI) {
 	let timer: NodeJS.Timeout | undefined;
-	let refreshing = false;
+	let controller: AbortController | undefined;
+	let inFlight: Promise<void> | undefined;
+	let stopped = true;
 
-	const refreshSafely = async (ctx: ExtensionContext) => {
-		if (refreshing) return;
-		refreshing = true;
-		try {
-			await refresh(ctx);
-		} finally {
-			refreshing = false;
-		}
+	const refresh = (ctx: ExtensionContext): Promise<void> => {
+		if (ctx.mode !== "tui" || stopped) return Promise.resolve();
+		if (inFlight) return inFlight;
+		const signal = controller!.signal;
+		inFlight = (async () => {
+			const options = { cwd: ctx.cwd, timeout: 15_000, maxBuffer: 10 * 1024 * 1024, signal };
+			try {
+				await exec("git", ["rev-parse", "--show-toplevel"], options);
+			} catch {
+				if (!signal.aborted) ctx.ui.setStatus(STATUS_KEY, undefined);
+				return;
+			}
+			try {
+				// gh resolves the repository from remotes, never from the checked-out branch.
+				const { stdout } = await exec("gh", ["pr", "list", "--state", "open", "--author", "@me",
+					"--limit", "1000", "--json", "number,url,statusCheckRollup"], options);
+				const prs = JSON.parse(stdout) as PullRequest[];
+				if (!signal.aborted) ctx.ui.setStatus(STATUS_KEY, renderPrs(prs, (color, text) => ctx.ui.theme.fg(color, text)));
+			} catch {
+				if (!signal.aborted) ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("warning", "PRs unavailable · /prs to retry"));
+			}
+		})().finally(() => { inFlight = undefined; });
+		return inFlight;
 	};
 
+	pi.registerCommand("prs", {
+		description: "Refresh your open PR links and CI checks for this repository",
+		handler: async (_args, ctx) => { await refresh(ctx); },
+	});
 	pi.on("session_start", async (_event, ctx) => {
-		await refreshSafely(ctx);
-		timer = setInterval(() => void refreshSafely(ctx), REFRESH_INTERVAL_MS);
+		if (ctx.mode !== "tui") return;
+		stopped = false;
+		controller = new AbortController();
+		await refresh(ctx);
+		if (!stopped) timer = setInterval(() => void refresh(ctx), REFRESH_INTERVAL_MS);
 	});
-
-	pi.on("agent_end", async (_event, ctx) => {
-		await refreshSafely(ctx);
-	});
-
-	pi.registerCommand("pr-status", {
-		description: "Refresh the GitHub PR/checks statusline item",
-		handler: async (args, ctx) => {
-			const action = args.trim();
-			if (["open", "view"].includes(action)) {
-				await openCurrentPr(ctx);
-				return;
-			}
-
-			if (["rerun", "rerun-failed", "retry"].includes(action)) {
-				await rerunFailedChecks(ctx);
-				await refreshSafely(ctx);
-				return;
-			}
-
-			await refreshSafely(ctx);
-			ctx.ui.notify("GitHub PR status refreshed", "info");
-		},
-	});
-
-	pi.registerCommand("pr-open", {
-		description: "Open the current GitHub PR in the browser",
-		handler: async (_args, ctx) => {
-			await openCurrentPr(ctx);
-		},
-	});
-
-	pi.registerCommand("pr-rerun-failed", {
-		description: "Re-run failed GitHub Actions checks for the current PR",
-		handler: async (_args, ctx) => {
-			await rerunFailedChecks(ctx);
-			await refreshSafely(ctx);
-		},
-	});
-
+	pi.on("agent_end", (_event, ctx) => { void refresh(ctx); });
 	pi.on("session_shutdown", (_event, ctx) => {
+		stopped = true;
+		controller?.abort();
 		if (timer) clearInterval(timer);
 		timer = undefined;
-		ctx.ui.setStatus(STATUS_KEY, undefined);
+		if (ctx.mode === "tui") {
+			ctx.ui.setStatus(STATUS_KEY, undefined);
+		}
 	});
 }
